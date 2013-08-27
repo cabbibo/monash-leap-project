@@ -4,8 +4,8 @@ document.write('<body onload="prepareCodebird()"></body><div id="loadStatus" sty
 
 
 /****************************** AUTHENTICATION DIALOG **************************************/
-var CONSUMER_KEY = "T3gyQwNnpcfqGCgD4G3BVA";
-var CONSUMER_KEY_SECRET = "doy7QtdeVqMmpLxGRz9qNRJCBiY0CaKbjgIzchifQ";
+var CONSUMER_KEY = "YOUR APP KEY";
+var CONSUMER_KEY_SECRET = "YOUR APP KEY SECRET";
 
 var cb;
 
