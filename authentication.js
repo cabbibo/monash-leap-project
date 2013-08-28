@@ -1,13 +1,39 @@
+/*
+TO USE THIS MODULE (in your own html file):
+0 - fill in your app's consumer key and secret tokens into this file
+1 - import codebird and this file into your html (via script tags with src)
+2 - declare anywhere a div with id 'authentication'; this is where the authentication dialog will appear
+3 - declare a function to be called once authentication is complete (when your js script and page setup should effectively start).
+4 - call authenticate(signal) in your html script, when you wish to display the authentication dialog, passing the name of your function above
 
-/****************************** HTML CONSTRUCTION *******************************************/
-document.write('<body onload="prepareCodebird()"></body><div id="loadStatus" style="vertical-align:middle; text-align:center;">Loading Authentication...</div><div id="pinContainer" style="vertical-align:middle; text-align:center;"><b>PIN</b><br><input type="text" id="pinField" style="text-align:center" onkeyup="attemptPinSubmit(event)" disabled="true"></div><script type="text/javascript" src="codebird/sha1.js"></script><script type="text/javascript" src="codebird-js/codebird.js"></script>');
+NOTE:
+- Your browser is likely to block a required pop-up; you will need to allow the pop-up and refresh your browser
+- When authentication has finished, the contents of the 'authentication' div will be cleared (the div effectively removed) and your post-auth function will be called.
+- You can setup your page before authentication (with the html) without issue, but you should remember the auth dialog ('authentication' div) will change size.
 
+AUTHENTICATION PROCESS:
+When authenticating;
+	- The page will initially require some loading time (to fetch some request tokens and an auth URL from Twitter)
+	- The page will open a new window (a pop up) where the user must approve the app and will be given a PIN
+	- The user must enter the given PIN into the authentication dialog, which if approved, will alert the user and disappear
+		If the PIN is not approved, the user will be alerted and the entire process will be repeated (until approved).
+*/
 
-/****************************** AUTHENTICATION DIALOG **************************************/
-var CONSUMER_KEY = "YOUR APP KEY";
-var CONSUMER_KEY_SECRET = "YOUR APP KEY SECRET";
-
+var CONSUMER_KEY = "YOUR CONSUMER KEY";
+var CONSUMER_KEY_SECRET = "YOUR CONSUMER KEY SECRET";
 var cb;
+var signal;
+
+function authenticate(flag) {
+	// remember the function to call after auth completion
+	signal = flag;
+
+	// set up widgets; requires a 'authentication' element in importing html
+	document.getElementById('authentication').innerHTML='<div id="loadStatus" style="vertical-align:middle; text-align:center;">Loading Authentication...</div><div id="pinContainer" style="vertical-align:middle; text-align:center;"><b>PIN</b><br><input type="text" id="pinField" style="text-align:center" onkeyup="attemptPinSubmit(event)" disabled="true"></div>';
+	
+	// begin authentication chain
+	prepareCodebird();
+}
 
 function prepareCodebird() {
 	cb = new Codebird;
@@ -19,7 +45,6 @@ function authenticateUser() {
 	// gets a request token
 	cb.__call("oauth_requestToken", {oauth_callback: "oob"},
 		function (reply) {
-			console.log(reply);
 			// store it
 			cb.setToken(reply.oauth_token, reply.oauth_token_secret);
 			// gets the authorize screen URL
@@ -27,7 +52,6 @@ function authenticateUser() {
 				"oauth_authorize",
 				{},
 				function (auth_url) {
-					console.log(auth_url);
 					reportAuthenticationScreenLoaded();
 					openAuthenticationScreen(auth_url);
 				}
@@ -60,14 +84,13 @@ function attemptPinSubmit(event) {
 		document.getElementById('loadStatus').innerHTML="Checking PIN...";
 		cb.__call("oauth_accessToken", {oauth_verifier: document.getElementById('pinField').value},
 			function (reply) {
-				console.log(reply);
 				// successful authentication
 				if (reply.httpstatus === 200) {
 					// store the authenticated token, prepare the graph
 					cb.setToken(reply.oauth_token, reply.oauth_token_secret);
 					clearAuthenticationFields();
 					alert("Authentication successful");
-					setupDisplay();
+					signal();
 				} else {
 					alertPinError();
 				}
@@ -89,12 +112,4 @@ function clearAuthenticationFields() {
 	// hide the authentication crap
 	document.getElementById('loadStatus').innerHTML='';
 	document.getElementById('pinContainer').innerHTML='';
-}
-
-/************************************ YOUR CODE *********************************/
-
-// this method will be called just after the user has been successfully authenticated and the screen is cleared.
-// it is called on line 73 (if you want to rename it)
-function setupDisplay() {
-	
 }
