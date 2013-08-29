@@ -1,0 +1,76 @@
+<textarea id="matrixInput" rows='10' cols='20'>enter a directed adjacency matrix
+(n by n numbers space and newline seperated, no other symbols)</textarea>
+<input type="button" value="graph" onClick='begin()'>
+<div id="canvas"></div>  
+
+<script type="text/javascript" src="AdjacencyMatrix.js"></script>
+<script type="text/javascript" src="Physics.js"></script>
+<script type="text/javascript" src="raphael/raphael.js"></script>
+
+<script type="text/javascript">
+
+var TICK_DURATION = 0.01; //s
+var REFRESH_RATE = 30;
+var NODE_LABELS = ['A','B','C','D','E','F','G','H','I','J','K'];
+var NODE_RADIUS = 20;
+var CANVAS_WIDTH = 1800;
+var CANVAS_HEIGHT = 800;
+
+var paper = Raphael(document.getElementById('canvas'), CANVAS_WIDTH, CANVAS_HEIGHT);
+var matrix;
+var nodes;
+
+function begin() {
+
+	// build matrix and position list
+	matrix = parseMatrix(document.getElementById('matrixInput').value);
+	nodes = new Array(matrix.rows);
+	for (var i=0; i < nodes.length; i++) {
+		nodes[i] = new Body(NODE_LABELS[i], new Vector(Math.random() * CANVAS_WIDTH, Math.random() * CANVAS_HEIGHT, 0), 1, 1, 0.05);
+	}
+	
+	graph();
+	window.setInterval(update,REFRESH_RATE);
+}	
+
+function update() {
+	// establish forces
+	//  i = 1 MEANS THE FIRST NODE (A) IS ANCHORED
+	for (var i=0; i < nodes.length; i++) {
+		for (var j=0; j < nodes.length; j++) {
+			// electrostatic (global)
+			if (i !== j) {
+				nodes[i].addElectrostaticForce(nodes[j]);
+			}
+			// spring (connected)
+			if ((i !== j) && (matrix.getElement(i, j) === 1 || matrix.getElement(j, i) === 1)) {
+				nodes[i].addSpringForce(nodes[j]);
+			}
+		}
+	}
+	
+	// update positions
+	for (var i=0; i < nodes.length; i++) {
+		nodes[i].simulate(TICK_DURATION);
+	}
+	graph();
+}
+
+function graph() {	
+	paper.clear();
+
+	// draw nodes
+	for (var i=0; i < nodes.length; i++) {
+		paper.circle(nodes[i].position.x, nodes[i].position.y, NODE_RADIUS);
+		paper.text(nodes[i].position.x, nodes[i].position.y, nodes[i].data);
+		// draw links
+		for (var j=0; j < matrix.columns; j++) {
+			if ((i !== j) && (matrix.getElement(i,j) === 1)) {
+				paper.path("M" + nodes[i].position.x + " " + nodes[i].position.y + " L" + nodes[j].position.x + " " + nodes[j].position.y);
+			}
+		}
+	}
+	
+}
+
+</script>
