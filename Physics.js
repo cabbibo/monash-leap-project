@@ -49,6 +49,8 @@ Body.prototype.simulate = function(duration) {
 	this.position = this.position.plus(displacement);
 	// update velocity
 	this.velocity = this.velocity.plus(acceleration.multiplyBy(duration));
+	// add drag
+	this.velocity = this.velocity.multiplyBy(0.95);
 	// clear forces
 	this.force = new Vector(0, 0, 0);
 	// return length moved
