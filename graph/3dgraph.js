@@ -31,12 +31,12 @@ function initializeScene()
   scene = new THREE.Scene();
 
   camera = new THREE.PerspectiveCamera(45, canvasWidth / canvasHeight, nearClip, farClip);
-  camera.position.set(0, 0, 50);
+  camera.position.set(0, 0, 60);
   camera.lookAt(new THREE.Vector3(0, 0, 0));
   scene.add(camera);
 
   var pointLight = new THREE.PointLight(0xFFFFFF);
-  pointLight.position.set(0, 0, 10);
+  pointLight.position.set(0, 0, 30);
   scene.add(pointLight);
 }
 
@@ -50,6 +50,7 @@ function buildGraph()
   obama.followers = obama.followers.concat(["elonmusk", "nick", "tyson", "kevinrudd", "jordan", "sam", "dilpreet"]);
   var rudd = new User("kevinrudd");
   rudd.followers = rudd.followers.concat(["juliagillard", "anthonyalbanese", "pennywong"]);
+  rudd.pinned = true;
   var gillard = new User("juliagillard");
   gillard.followers = gillard.followers.concat(["kevinrudd"]);
   new User("tyson");
@@ -62,6 +63,10 @@ function buildGraph()
   new User("dilpreet");
   new User("anthonyalbanese");
   new User("pennywong");
+  for (var i = 1; i < 100; ++i)
+    new User(i);
+  for (var i = 1; i < 100; ++i)
+    rudd.followers = rudd.followers.concat(i);
   elon.drawNewEdges();
   nick.drawNewEdges();
   obama.drawNewEdges();
@@ -72,10 +77,11 @@ function buildGraph()
 // A hash table to store all collected Twitter users
 var users = {};
 var springRestLength = 10;
-var springK = 30;
+var springK = 10;
 var repulsionStrength = 80;
-var dragConstant = 0.15;
-var mouseDragForce = 20;
+var dragConstant = 0.2;
+var mouseDragForce = 200;
+var stabilisingForce = 50; // Constant force applied to all nodes to stop slow movements
 
 function User(name)
 {
@@ -90,7 +96,7 @@ function User(name)
   );
 
   this.sphere.user = name;
-  this.sphere.position.set((Math.random()-0.5)*15, (Math.random()-0.5)*15, (Math.random()-0.5)*15-10);
+  this.sphere.position.set((Math.random()-0.5)*25, (Math.random()-0.5)*25, (Math.random()-0.5)*25-10);
   scene.add(this.sphere);
   this.velocity = new THREE.Vector3();
   this.accel = new THREE.Vector3();
@@ -124,7 +130,8 @@ User.prototype.drawNewEdges = function() {
 }
 
 User.prototype.calculateForces = function() {
-  // Add forces from follower connections
+
+  // Add spring forces between self and followers
   for (var i = 0; i < this.followers.length; ++i) {
     var follower = User[this.followers[i]];
 
@@ -133,20 +140,24 @@ User.prototype.calculateForces = function() {
       var length = displacement.length();
       if (length > 0) {
         var accel = displacement.multiplyScalar(springK*(length-springRestLength)/length);
-        this.accel.add(accel);
-        follower.accel.add(accel.multiplyScalar(-1));
+        if (!this.pinned)
+          this.accel.add(accel);
+        if (!follower.pinned)
+          follower.accel.add(accel.multiplyScalar(-1));
       }
     }
   }
 
-  // Add forces from node proximity
-  for (var p in User) {
-    var neighbour = User[p];
-    if (neighbour !== this) {
-      var displacement = (new THREE.Vector3()).subVectors(neighbour.sphere.position, this.sphere.position);
-      var length = displacement.length();
-      displacement.multiplyScalar(-repulsionStrength/length/length/length);
-      this.accel.add(displacement);
+  if (!this.pinned) {
+    // Add forces from node proximity
+    for (var p in User) {
+      var neighbour = User[p];
+      if (neighbour !== this) {
+        var displacement = (new THREE.Vector3()).subVectors(neighbour.sphere.position, this.sphere.position);
+        var length = displacement.length();
+        displacement.multiplyScalar(-repulsionStrength/length/length/length);
+        this.accel.add(displacement);
+      }
     }
   }
 
@@ -167,8 +178,23 @@ User.prototype.updatePosition = function(deltaTime) {
   this.accel.sub(this.velocity.clone().multiplyScalar(dragConstant*this.velocity.length()));
   // Update velocity
   this.velocity.add(this.accel.multiplyScalar(deltaTime));
-  // Update position
-  this.sphere.position.add(this.velocity.clone().multiplyScalar(deltaTime));
+
+  // Round to zero for very small velocities to stop slow drifting when node is not being dragged
+  if (this.selected) {
+    this.sphere.position.add(this.velocity.clone().multiplyScalar(deltaTime));
+  }
+  else {
+    var vmag = this.velocity.length();
+    var vdir = this.velocity.clone().divideScalar(vmag);
+    var negatedVelocity = deltaTime*stabilisingForce;
+    if (vmag > negatedVelocity) {
+      vmag -= negatedVelocity;
+    // Update position
+    this.sphere.position.add(vdir.multiplyScalar(deltaTime*vmag));
+    }
+    else this.velocity.set(0, 0, 0);
+  }
+
   // Reset forces
   this.accel.set(0, 0, 0);
 
@@ -203,7 +229,7 @@ Edge.prototype.remove = function() {
   scene.remove(this.lineMesh);
 }
 
-var frameTimeLimit = 0.05;
+var frameTimeLimit = 0.03;
 var timeOfLastFrame = 0;
 
 function nextUpdate()
@@ -290,6 +316,15 @@ initializeScene();
 buildGraph();
 timeOfLastFrame = new Date().getTime();
 setInterval(mainLoop, 1000/60);
+
+
+
+
+
+
+
+
+
 
 
 
