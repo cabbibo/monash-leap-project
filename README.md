@@ -10,7 +10,7 @@ Forward/back movement: W/S
 
 Left/right movement: A/D
 
-Down/up movement Q/E
+Down/up movement: Q/E
 
 Look around: Hold right mouse button and move mouse
 

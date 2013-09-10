@@ -5,10 +5,6 @@ var camera;
 var projector = new THREE.Projector();
 var nearClip = 1, farClip = 1000;
 var renderer;
-var mouse = new THREE.Vector2();
-mouse.x = 0;
-mouse.y = 0;
-var selectedUser = null;
 
 // Variables for node models
 var sphereRadius = 1;
@@ -22,9 +18,47 @@ var springRestLength = 10;
 var springK = 10;
 var repulsionStrength = 80;
 var dragConstant = 0.2;
-var mouseDragForce = 20;
-var maxMouseDragAccel = 8000;
+var keyboardMoveSpeed = 50;
+var mouseLookSensitivity = 2.5;
+
+var pointerDragForce = 20;
+var maxPointerDragAccel = 8000;
 var stabilisingForce = 50; // Constant force applied to all nodes to stop slow movements
+
+// Pointer-related variables
+var currentPointer; // Holds a reference to the currently-used pointer object (mouse or fingertip)
+var mouse = new THREE.Vector2();
+mouse.x = 0; mouse.y = 0;
+var fingertip = new THREE.Vector2();
+fingertip.x = 0; fingertip.y = 0;
+var selectedUser = null;
+
+// Leap controller variables
+var controller = new Leap.Controller();
+
+controller.on('connect', function() {
+  console.log("Successfully connected.");
+});
+
+controller.on('deviceConnected', function() {
+  console.log("A Leap device has been connected.");
+});
+
+controller.on('deviceDisconnected', function() {
+  console.log("A Leap device has been disconnected.");
+});
+
+controller.connect();
+
+var leapMetresPerMM = 0.5;
+var leapRadiansPerMM = 0.005;
+var screenAspectRatio = 16/9;
+var screenSize = 15.6 * 25.4; // in mm
+var screenHeight = Math.sqrt(screenSize*screenSize/(screenAspectRatio*screenAspectRatio + 1));
+var screenWidth = Math.sqrt(screenSize*screenSize - screenHeight*screenHeight);
+var leapDistance = 250; // in mm
+var leapHeight = 0; //relative to the bottom of the display
+
 
 function mainLoop()
 {
@@ -41,23 +75,7 @@ document.addEventListener('mousedown',
                           switch (event.which) {
                             case 1:
                               mouse.leftHeld = true;
-
-                              // Select the node under the mouse
-                              var pointAtMouse = new THREE.Vector3(mouse.x, mouse.y, 1);
-                              projector.unprojectVector(pointAtMouse, camera);
-                              var directionVector = pointAtMouse.sub(camera.position);
-                              directionVector.normalize();
-
-                              var raycaster = new THREE.Raycaster(camera.position, directionVector, nearClip, farClip);
-                              var intersected = raycaster.intersectObjects(scene.children);
-
-                              for (var i = 0; i < intersected.length; ++i) {
-                                if (intersected[i].object.user !== undefined) {
-                                  selectedUser = User.get(intersected[i].object.user);
-                                  selectedUser.selected = true;
-                                  break;
-                                }
-                              }
+                              selectUserAtScreenPosition(mouse);
                               break;
                             case 2:
                               mouse.middleHeld = true;
@@ -107,6 +125,7 @@ var keyboard = {};
 keyboard.key = {};
 keyboard.keyToggle = {};
 keyboard.keyPressed = {};
+keyboard.keyReleased = {};
 
 function translateKeycode(code) {
   if (code>=65 && code<65+26) return "abcdefghijklmnopqrstuvwxyz"[code-65];
@@ -138,12 +157,16 @@ document.addEventListener('keydown',function(evt) {
 document.addEventListener('keyup',function(evt) {
   var t = translateKeycode(evt.keyCode);
   keyboard.key[t] = false;
+  keyboard.keyReleased[t] = true;
 }, false);
 
 function resetKeys()
 {
   for (var t in keyboard.keyPressed) {
     keyboard.keyPressed[t] = false;
+  }
+  for (var t in keyboard.keyReleased) {
+    keyboard.keyReleased[t] = false;
   }
 }
 
@@ -170,7 +193,7 @@ function initializeScene()
   scene.add(camera);
 
   var pointLight = new THREE.PointLight(0xFFFFFF);
-  pointLight.position.set(0, 0, 1);
+  pointLight.position.set(0, 0, 0);
   camera.add(pointLight);
 }
 
@@ -209,6 +232,16 @@ function User(name)
 
   this.followers = new Array();
   this.followerEdges = new Array();
+
+  /*
+  this.sprite = new THREE.Sprite(catFaceSpriteMaterial);
+	this.sprite.position.set(30, 0, -5);
+  var scaleX = 100, scaleY = 100;
+  this.sprite.scale.set( scaleX, scaleY, 1 );
+	scene.add(this.sprite);
+  */
+  this.catPicMesh = new THREE.Mesh(new THREE.PlaneGeometry(Math.sqrt(2), Math.sqrt(2), 1, 1), catFaceMaterial);
+  this.sphere.add(this.catPicMesh);
 }
 
 // An associative array to store all created users
@@ -226,7 +259,11 @@ User.getOrCreate = function(name) {
   return user;
 }
 
-User.prototype.sphereMaterial = new THREE.MeshLambertMaterial({color: 0x00F2FF});
+User.prototype.sphereMaterial = new THREE.MeshLambertMaterial({color: 0xFFFFFF, opacity: 0.3, transparent: true});
+var catFaceTexture = THREE.ImageUtils.loadTexture("cat-face-grey.jpg");
+var catFaceMaterial = new THREE.MeshBasicMaterial({map: catFaceTexture});
+var catFaceSpriteMaterial = new THREE.SpriteMaterial( { map: catFaceTexture, alignment: THREE.SpriteAlignment.topLeft, opacity: 1 });
+var redSphereMat = new THREE.MeshLambertMaterial({color: 0xFF0000});
 
 // This method will rebuild all edges of a node.
 // This currently only has a purpose if you change the follower list outside the addFollowers() method
@@ -306,20 +343,22 @@ User.prototype.calculateForces = function() {
 
   // Add force from being dragged around via interaction
   if (this.selected) {
-    // Set the mouse depth in 3D to the node depth (in screen space)
-    var nodePos = projector.projectVector(this.sphere.position.clone(), camera);
-    var mousePos = new THREE.Vector3(mouse.x, mouse.y, nodePos.z);
-    // Now in world space
-    projector.unprojectVector(mousePos, camera);
 
-    // Displacement of the mouse pointer from the node
-    var displacement = mousePos.sub(this.sphere.position);
+    //this.sphere.update();
+    // Set the pointer depth in 3D to the node depth (in screen space)
+    var nodePos = projector.projectVector(this.sphere.position.clone(), camera);
+    var pointerPos = new THREE.Vector3(currentPointer.x, currentPointer.y, nodePos.z);
+    // Now in world space
+    projector.unprojectVector(pointerPos, camera);
+
+    // Displacement of the pointer pointer from the node
+    var displacement = pointerPos.sub(this.sphere.position);
     // Force is proportional to square distance and drag force
-    var newAccel = displacement.multiplyScalar(displacement.length() * mouseDragForce);
+    var newAccel = displacement.multiplyScalar(displacement.length() * pointerDragForce);
     var mag = newAccel.length();
     // Limit the maximum drag force
-    if (mag > maxMouseDragAccel)
-      newAccel.multiplyScalar(maxMouseDragAccel / mag);
+    if (mag > maxPointerDragAccel)
+      newAccel.multiplyScalar(maxPointerDragAccel / mag);
     this.accel.add(newAccel);
   }
 }
@@ -396,7 +435,10 @@ function nextUpdate()
     update(deltaTime);
 }
 
-var lastX = 0, lastY = 0;
+var lastMouseX = 0, lastMouseY = 0;
+var lastFrame = null;
+var highlightedUser = null;
+
 function update(deltaTime)
 {
   var backwardsRotation = camera.quaternion.clone();
@@ -404,33 +446,101 @@ function update(deltaTime)
   backwardsRotation.y *= -1;
   backwardsRotation.z *= -1;
 
-  if (mouse.rightHeld) {
-    var dx = mouse.x - lastX;
-    var dy = mouse.y - lastY;
+  var dx = 0, dy = 0, dz = 0;
+  // Reset the finger point position every frame so that the finger spot
+  // isn't drawn when we lose sight of the finger
 
-    camera.rotateOnAxis(new THREE.Vector3(0, 1, 0).applyQuaternion(backwardsRotation), -dx * 90 * deltaTime);
-    camera.rotateOnAxis(new THREE.Vector3(1, 0, 0), dy * 75 * deltaTime);
+  if (highlightedUser !== null) {
+          highlightedUser.sphere.material = User.prototype.sphereMaterial;
+    highlightedUser.sphere.updateMorphTargets();
+    highlightedUser = null;
   }
-  lastX = mouse.x;
-  lastY = mouse.y;
+
+  var frame = controller.frame(0);
+  if (mouse.rightHeld) {
+    var dx = (mouse.x - lastMouseX) * mouseLookSensitivity;
+    var dy = (mouse.y - lastMouseY) * 0.7 * mouseLookSensitivity;
+
+  }
+  else if (frame.valid) {
+    if (lastFrame !== null && lastFrame.valid) {
+      var pointing = false;
+
+      if (frame.fingers.length === 1) {
+        pointing = true;
+        var finger = frame.fingers[0];
+        var pos = finger.stabilizedTipPosition;
+        var dir = finger.direction;
+        // Get the position of the finger tip relative to screen centre
+        pos[1] += leapHeight - screenHeight/2;
+        pos[2] += leapDistance;
+        // Follow finger tip over to screen surface
+        var factor = -pos[2] / dir[2];
+        pos[0] += dir[0]*factor;
+        pos[1] += dir[1]*factor;
+        pos[2] += dir[2]*factor;
+        // pos[0] & pos[1] are now mm from screen centre
+        // get the pointing position on the virtual screen from [-1, 1]
+        fingertip.x = pos[0] / (0.5*screenWidth);
+        fingertip.y = pos[1] / (0.5*screenHeight);
+        selectUserAtScreenPosition(fingertip);
+        if (selectedUser !== null) {
+          highlightedUser = selectedUser;
+          selectedUser.sphere.material = redSphereMat;
+          selectedUser.sphere.updateMorphTargets();
+          selectedUser.selected = false;
+          selectedUser = null;
+
+          currentPointer = null;
+        }
+        if (keyboard.keyPressed[' ']) {
+          selectUserAtScreenPosition(fingertip);
+        }
+      }
+      else if (frame.fingers.length >= 4) {
+        var t = frame.translation(lastFrame);
+        dx = -t[0] * leapRadiansPerMM;
+        dy = -t[1] * leapRadiansPerMM;
+        dz = -t[2] * leapMetresPerMM;
+      }
+
+      if (!pointing && currentPointer === fingertip) {
+        selectedUser.selected = false;
+        selectedUser = null;
+        currentPointer = null;
+      }
+    }
+  }
+
+  lastMouseX = mouse.x;
+  lastMouseY = mouse.y;
+  lastFrame = frame;
+
+  if (dx !== 0)
+    camera.rotateOnAxis(new THREE.Vector3(0, 1, 0).applyQuaternion(backwardsRotation), -dx);
+  if (dy !== 0)
+    camera.rotateOnAxis(new THREE.Vector3(1, 0, 0), dy);
+  if (dz !== 0)
+    camera.position.add(new THREE.Vector3(0, 0, dz).applyQuaternion(camera.quaternion));
+
 
   if (keyboard.key['a']) {
-    camera.position.add(new THREE.Vector3(-1, 0, 0).applyQuaternion(camera.quaternion));
+    camera.position.add(new THREE.Vector3(-keyboardMoveSpeed*deltaTime, 0, 0).applyQuaternion(camera.quaternion));
   }
   if (keyboard.key['d']) {
-    camera.position.add(new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion));
+    camera.position.add(new THREE.Vector3(keyboardMoveSpeed*deltaTime, 0, 0).applyQuaternion(camera.quaternion));
   }
   if (keyboard.key['w']) {
-    camera.position.add(new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion));
+    camera.position.add(new THREE.Vector3(0, 0, -keyboardMoveSpeed*deltaTime).applyQuaternion(camera.quaternion));
   }
   if (keyboard.key['s']) {
-    camera.position.add(new THREE.Vector3(0, 0, 1).applyQuaternion(camera.quaternion));
+    camera.position.add(new THREE.Vector3(0, 0, keyboardMoveSpeed*deltaTime).applyQuaternion(camera.quaternion));
   }
   if (keyboard.key['q']) {
-    camera.position.add(new THREE.Vector3(0, -1, 0).applyQuaternion(camera.quaternion));
+    camera.position.add(new THREE.Vector3(0, -keyboardMoveSpeed*deltaTime, 0).applyQuaternion(camera.quaternion));
   }
   if (keyboard.key['e']) {
-    camera.position.add(new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion));
+    camera.position.add(new THREE.Vector3(0, keyboardMoveSpeed*deltaTime, 0).applyQuaternion(camera.quaternion));
   }
 
   for (var username in User.users) {
@@ -440,6 +550,26 @@ function update(deltaTime)
   // Apply net force for each node
   for (var username in User.users) {
     User.get(username).updatePosition(deltaTime);
+  }
+}
+
+function selectUserAtScreenPosition(pointer)
+{
+  var pointOnScreen = new THREE.Vector3(pointer.x, pointer.y, 1);
+  projector.unprojectVector(pointOnScreen, camera);
+  var directionVector = pointOnScreen.sub(camera.position);
+  directionVector.normalize();
+
+  var raycaster = new THREE.Raycaster(camera.position, directionVector, nearClip, farClip);
+  var intersected = raycaster.intersectObjects(scene.children);
+
+  for (var i = 0; i < intersected.length; ++i) {
+    if (intersected[i].object.user !== undefined) {
+      selectedUser = User.get(intersected[i].object.user);
+      selectedUser.selected = true;
+      currentPointer = pointer;
+      break;
+    }
   }
 }
 
@@ -458,6 +588,9 @@ initializeScene();
 buildGraph();
 timeOfLastFrame = new Date().getTime();
 setInterval(mainLoop, 1000/60);
+
+
+
 
 
 
