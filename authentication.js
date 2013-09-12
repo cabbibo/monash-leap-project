@@ -1,3 +1,5 @@
+// Tyson Jones - 12/9/13
+
 /*
 TO USE THIS MODULE (in your own html file):
 0 - fill in your app's consumer key and secret tokens into this file
@@ -19,14 +21,13 @@ When authenticating;
 		If the PIN is not approved, the user will be alerted and the entire process will be repeated (until approved).
 */
 
-var CONSUMER_KEY = "YOUR CONSUMER KEY";
-var CONSUMER_KEY_SECRET = "YOUR CONSUMER KEY SECRET";
-var cb;
-var signal;
+
+authenticator = {CONSUMER_KEY:"CONSUMER", CONSUMER_KEY_SECRET:"SECRET", cb:null, signal:null};
+
 
 function authenticate(flag) {
 	// remember the function to call after auth completion
-	signal = flag;
+	authenticator.signal = flag;
 
 	// set up widgets; requires a 'authentication' element in importing html
 	document.getElementById('authentication').innerHTML='<div id="loadStatus" style="vertical-align:middle; text-align:center;">Loading Authentication...</div><div id="pinContainer" style="vertical-align:middle; text-align:center;"><b>PIN</b><br><input type="text" id="pinField" style="text-align:center" onkeyup="attemptPinSubmit(event)" disabled="true"></div>';
@@ -36,19 +37,19 @@ function authenticate(flag) {
 }
 
 function prepareCodebird() {
-	cb = new Codebird;
-	cb.setConsumerKey(CONSUMER_KEY, CONSUMER_KEY_SECRET);
+	authenticator.cb = new Codebird;
+	authenticator.cb.setConsumerKey(authenticator.CONSUMER_KEY, authenticator.CONSUMER_KEY_SECRET);
 	authenticateUser();
 }
 
 function authenticateUser() {
 	// gets a request token
-	cb.__call("oauth_requestToken", {oauth_callback: "oob"},
+	authenticator.cb.__call("oauth_requestToken", {oauth_callback: "oob"},
 		function (reply) {
 			// store it
-			cb.setToken(reply.oauth_token, reply.oauth_token_secret);
+			authenticator.cb.setToken(reply.oauth_token, reply.oauth_token_secret);
 			// gets the authorize screen URL
-			cb.__call(
+			authenticator.cb.__call(
 				"oauth_authorize",
 				{},
 				function (auth_url) {
@@ -82,15 +83,14 @@ function attemptPinSubmit(event) {
 	if (event.keyCode === 13) {
 		document.getElementById('pinField').disabled=true;
 		document.getElementById('loadStatus').innerHTML="Checking PIN...";
-		cb.__call("oauth_accessToken", {oauth_verifier: document.getElementById('pinField').value},
+		authenticator.cb.__call("oauth_accessToken", {oauth_verifier: document.getElementById('pinField').value},
 			function (reply) {
 				// successful authentication
 				if (reply.httpstatus === 200) {
 					// store the authenticated token, prepare the graph
-					cb.setToken(reply.oauth_token, reply.oauth_token_secret);
+					authenticator.cb.setToken(reply.oauth_token, reply.oauth_token_secret);
 					clearAuthenticationFields();
-					alert("Authentication successful");
-					signal();
+					authenticator.signal();
 				} else {
 					alertPinError();
 				}
