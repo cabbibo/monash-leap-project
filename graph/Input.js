@@ -37,7 +37,7 @@ define(function() {
                             switch (event.which) {
                               case 1:
                                 Input.mouse.leftHeld = true;
-                                if (Input.currentPointer === Input.mouse && Input.mouse.leftPressedCallback !== undefined)
+                                if (Input.mouse.leftPressedCallback !== undefined)
                                   Input.mouse.leftPressedCallback();
                                 break;
                               case 2:
@@ -54,7 +54,7 @@ define(function() {
                             switch (event.which) {
                               case 1:
                                 Input.mouse.leftHeld = false;
-                                if (Input.currentPointer === Input.mouse && Input.mouse.leftReleasedCallback !== undefined)
+                                if (Input.mouse.leftReleasedCallback !== undefined)
                                   Input.mouse.leftReleasedCallback();
                                 break;
                               case 2:

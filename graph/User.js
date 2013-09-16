@@ -5,10 +5,12 @@ define(function() {
   var sphereSegments = 16;
   var sphereRings = 16;
 
-  User.standardSphereMat = new THREE.MeshLambertMaterial({color: 0xE0FFFF, opacity: 0.3, transparent: true});
+  var standardMat = new THREE.MeshLambertMaterial({color: 0xE0FFFF, opacity: 0.3, transparent: true});
+  var highlightedMat = new THREE.MeshLambertMaterial({color: 0xFF8800, opacity: 0.3, transparent: true});
+  var selectedMat = new THREE.MeshLambertMaterial({color: 0x77FF77, opacity: 0.3, transparent: true});
   var catFaceTexture = THREE.ImageUtils.loadTexture("cat-face-grey.jpg");
   var catFaceMaterial = new THREE.MeshBasicMaterial({map: catFaceTexture});
-  User.redSphereMat = new THREE.MeshLambertMaterial({color: 0xFFAA00, opacity: 0.3, transparent: true});
+
 
   function User(name)
   {
@@ -144,6 +146,16 @@ define(function() {
       if (mag > maxPointerDragAccel)
         newAccel.multiplyScalar(maxPointerDragAccel / mag);
       this.accel.add(newAccel);
+    }
+
+    if (this.selected) {
+      this.sphere.material = selectedMat;
+    }
+    else if (this.highlighted) {
+      this.sphere.material = highlightedMat;
+    }
+    else {
+      this.sphere.material = standardMat;
     }
   }
 

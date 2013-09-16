@@ -114,6 +114,17 @@ function nextUpdate()
 
 var lastMouseX = 0, lastMouseY = 0;
 var highlightedUser = null;
+var fingerLostMaxLenience = 10;
+var fingerLostLenience = 0;
+var pointingHandID = -1;
+var pointingHandCheckedIn = false;
+var maxPointingHandGrace = 10;
+var pointingHandGrace = 0;
+var grabbingHandCheckedIn = false;
+var maxGrabbingHandGrace = 10;
+var grabbingHandGrace = 0;
+var maxGrabWarmup = 0.3;
+var grabWarmup = -2; // -1 is 'ready' value, -2 is 'finished' value
 
 function update(deltaTime)
 {
@@ -137,16 +148,95 @@ function update(deltaTime)
       checkHandInput(hands[1]);
   }
 
-  function checkHandInput(hand) {
-    if (hand.fingers.length === 1) {
-      Input.currentPointer = fingerPointer;
-      fingerPointer.copy(getFingerOnScreenNDC(hand.fingers[0]));
+  // Missing hands (or missing gestures) are addressed here,
+  // with a grace period for their return
+  if (pointingHandID !== -1) {
+    if (!pointingHandCheckedIn) {
+      --pointingHandGrace;
+      if (pointingHandGrace < 0) {
+        pointingHandID = -1;
+      }
     }
-    else if (hand.fingers.length >= 4) {
-      var t = hand.translation(Input.prevLeapFrame);
-      dx = -t[0] * leapRadiansPerMM;
-      dy = -t[1] * leapRadiansPerMM;
-      dz = -t[2] * leapMetresPerMM;
+    else pointingHandGrace = maxPointingHandGrace;
+
+    if (!grabbingHandCheckedIn && grabbedUser != null) {
+      --grabbingHandGrace;
+      if (grabbingHandGrace < 0) {
+        releaseGrab();
+      }
+    }
+    else grabbingHandGrace = maxGrabbingHandGrace;
+  }
+  pointingHandCheckedIn = false;
+  grabbingHandCheckedIn = false;
+
+  function checkHandInput(hand) {
+    var fingers = hand.fingers;
+
+    if (fingers.length === 1) {
+      Input.currentPointer = fingerPointer;
+
+      // Try and claim this hand as the pointing hand
+      if (pointingHandID === -1) {
+        pointingHandID = hand.id;
+      }
+
+      if (pointingHandID === hand.id) {
+        pointingHandCheckedIn = true;
+        if (fingerPointer.id !== fingers[0].id) {
+          // Give a few frames slack if we can't find the finger we had before
+          if (fingerLostLenience > 0) {
+            --fingerLostLenience;
+            return;
+          }
+          else {
+            fingerPointer.id = fingers[0].id;
+          }
+        }
+        fingerLostLenience = fingerLostMaxLenience;
+        fingerPointer.copy(getFingerOnScreenNDC(fingers[0]));
+      }
+    }
+    else if (pointingHandID === hand.id && fingers.length === 2) {
+      // If we see two fingers but one is the finger we were already tracking,
+      // ignore the second finger.
+      pointingHandCheckedIn = true;
+      if (fingers[0].id === fingerPointer.id) {
+        fingerPointer.copy(getFingerOnScreenNDC(fingers[0]));
+        console.log("Lenient.");
+      }
+      else if (fingers[1].id === fingerPointer.id) {
+        fingerPointer.copy(getFingerOnScreenNDC(fingers[1]));
+        console.log("Lenient.");
+      }
+    }
+
+    if (pointingHandID === -1) {
+      if (fingers.length >= 4) {
+        var t = hand.translation(Input.prevLeapFrame);
+        dx = -t[0] * leapRadiansPerMM;
+        dy = -t[1] * leapRadiansPerMM;
+        dz = -t[2] * leapMetresPerMM;
+      }
+    }
+    else if (pointingHandID !== hand.id) {
+      grabbingHandCheckedIn = true;
+      if (grabWarmup === -1) {
+        if (fingers.length < 2) {
+          grabWarmup = maxGrabWarmup;
+        }
+      }
+      else if (fingers.length >= 4) {
+        releaseGrab();
+        grabWarmup = -1;
+      }
+      else if (grabWarmup > 0) {
+        grabWarmup -= deltaTime;
+      }
+      else if (grabWarmup !== -2) {
+        grabWarmup = -2;
+        grabWithCurrentPointer();
+      }
     }
   }
 
@@ -171,11 +261,11 @@ function update(deltaTime)
   var newHighlightedUser = getUserUnderPointer(Input.currentPointer);
   if (newHighlightedUser !== null) {
     if (highlightedUser !== null) {
-      highlightedUser.sphere.material = User.standardSphereMat;
+      highlightedUser.highlighted = false;
       highlightedUser = null;
     }
     highlightedUser = newHighlightedUser;
-    highlightedUser.sphere.material = User.redSphereMat;
+    highlightedUser.highlighted = true;
   }
 
   if (dx !== 0)
@@ -215,11 +305,19 @@ function update(deltaTime)
   }
 }
 
+var fingerSmoothingLevel = 5;
+var fingerDirs = new Array(fingerSmoothingLevel);
+for (var i = 0; i < fingerSmoothingLevel; ++i)
+  fingerDirs[i] = [1, 1, 1];
+var fdi = 0;
+
 // Gets the position of the finger on the screen in Normalized Device Coordinates
 function getFingerOnScreenNDC(finger)
 {
-  var pos = finger.stabilizedTipPosition;
-  var dir = finger.direction;
+  var pos = finger.tipPosition;
+  fingerDirs[fdi] = finger.direction;
+  fdi = (fdi+1)%fingerSmoothingLevel;
+  var dir = averageOfVectors(fingerDirs);
 
   // Get the position of the finger tip relative to screen centre
   pos[1] += leapHeight - screenHeight/2;
@@ -235,6 +333,17 @@ function getFingerOnScreenNDC(finger)
   NDC.x = pos[0] / (0.5*screenWidth);
   NDC.y = pos[1] / (0.5*screenHeight);
   return NDC;
+}
+
+function averageOfVectors(vs)
+{
+  var result = [0, 0, 0];
+  for (var i = 0; i < 3; ++i) {
+    for (var j = 0; j < fingerSmoothingLevel; ++j)
+      result[i] += vs[j][i];
+    result[i] /= fingerSmoothingLevel;
+  }
+  return result;
 }
 
 function NDCToPixelCoordinates(NDC)
@@ -269,6 +378,32 @@ function draw()
   renderer.render(scene, camera);
 }
 
+function grabWithCurrentPointer()
+{
+  // Safeguard in case we still have somebody grabbed
+  if (grabbedUser !== null) {
+    grabbedUser.grabbed = false;
+    grabbedUser = null;
+  }
+  var newSelectedUser = getUserUnderPointer(Input.currentPointer);
+  if (newSelectedUser !== null) {
+    if (selectedUser !== null) selectedUser.selected = false;
+    selectedUser = newSelectedUser;
+    selectedUser.selected = true;
+
+    grabbedUser = selectedUser;
+    grabbedUser.grabbed = true;
+  }
+}
+
+function releaseGrab()
+{
+  if (grabbedUser !== null) {
+    grabbedUser.grabbed = false;
+    grabbedUser = null;
+  }
+}
+
 // Extra function for printing vectors when debugging
 function printVector(v)
 {
@@ -283,29 +418,9 @@ function main(i, u) {
   User = u;
 
   // Change the selected user to the user under the mouse and grab the user under the mouse
-  Input.mouse.leftPressedCallback = function() {
-    // Safeguard in case we still have somebody grabbed
-    if (grabbedUser !== null) {
-      grabbedUser.grabbed = false;
-      grabbedUser = null;
-    }
-    var newSelectedUser = getUserUnderPointer(Input.currentPointer);
-    if (newSelectedUser !== null) {
-      if (selectedUser !== null) selectedUser.selected = false;
-      selectedUser = newSelectedUser;
-      selectedUser.selected = true;
+  Input.mouse.leftPressedCallback = grabWithCurrentPointer;
 
-      grabbedUser = selectedUser;
-      grabbedUser.grabbed = true;
-    }
-  };
-
-  Input.mouse.leftReleasedCallback = function() {
-    if (grabbedUser !== null) {
-      grabbedUser.grabbed = false;
-      grabbedUser = null;
-    }
-  };
+  Input.mouse.leftReleasedCallback = releaseGrab;
 
   initializeScene();
   buildGraph();
