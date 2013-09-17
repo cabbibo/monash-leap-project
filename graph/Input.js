@@ -125,12 +125,16 @@ define(function() {
     }
 
     // Fetch new Leap frames
-    Input.prevLeapFrame = Input.currLeapFrame;
-    Input.currLeapFrame = Input.leap.frame(0);
+    var newFrame = Input.leap.frame(0);
+    if (newFrame.valid) {
+      Input.prevLeapFrame = Input.currLeapFrame;
+      Input.currLeapFrame = newFrame;
+    }
   }
 
   return Input;
 });
+
 
 
 

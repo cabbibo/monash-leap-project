@@ -26,16 +26,16 @@ var selectedUser = null;
 var grabbedUser = null;
 
 var leapMetresPerMM = 0.5;
-var leapRadiansPerMM = 0.005;
+var leapRadiansPerMM = 0.02;
 var screenAspectRatio = 16/9;
-//var screenSize = 15.6 * 25.4; // in mm
-var screenSize = 24 * 25.4;
+var screenSize = 15.6 * 25.4; // in mm
+//var screenSize = 24 * 25.4;
 var screenHeight = Math.sqrt(screenSize*screenSize/(screenAspectRatio*screenAspectRatio + 1));
 var screenWidth = Math.sqrt(screenSize*screenSize - screenHeight*screenHeight);
-//var leapDistance = 250; // in mm
-var leapDistance = 600;
-//var leapHeight = 0; //relative to the bottom of the display
-var leapHeight = -250;
+var leapDistance = 250; // in mm
+//var leapDistance = 600;
+var leapHeight = 0; //relative to the bottom of the display
+//var leapHeight = -250;
 
 window.addEventListener('resize',
                           function(event) {
@@ -123,7 +123,7 @@ var pointingHandGrace = 0;
 var grabbingHandCheckedIn = false;
 var maxGrabbingHandGrace = 10;
 var grabbingHandGrace = 0;
-var maxGrabWarmup = 0.3;
+var maxGrabWarmup = 0.2;
 var grabWarmup = -2; // -1 is 'ready' value, -2 is 'finished' value
 
 function update(deltaTime)
@@ -268,10 +268,6 @@ function update(deltaTime)
     highlightedUser.highlighted = true;
   }
 
-  if (dx !== 0)
-    camera.rotateOnAxis(new THREE.Vector3(0, 1, 0).applyQuaternion(backwardsRotation), -dx);
-  if (dy !== 0)
-    camera.rotateOnAxis(new THREE.Vector3(1, 0, 0), dy);
   if (dz !== 0)
     camera.position.add(new THREE.Vector3(0, 0, dz).applyQuaternion(camera.quaternion));
 
@@ -299,25 +295,53 @@ function update(deltaTime)
     User.get(username).calculateForces();
   }
 
+  var centroid = new THREE.Vector3();
+
   // Apply net force for each node
   for (var username in User.users) {
-    User.get(username).updatePosition(deltaTime);
+    var user = User.get(username);
+    user.updatePosition(deltaTime);
+    centroid.add(user.sphere.position);
+  }
+
+  centroid.divideScalar(Object.keys(User.users).length);
+
+  var displacement = centroid.clone().sub(camera.position);
+  // Move the camera to the centroid
+  camera.position.add(displacement);
+
+  // Rotate the camera
+  if (dx !== 0) {
+    camera.rotateOnAxis(new THREE.Vector3(0, 1, 0).applyQuaternion(backwardsRotation), dx);
+  }
+  if (dy !== 0) {
+    camera.rotateOnAxis(new THREE.Vector3(1, 0, 0), -dy);
+  }
+
+  // Apply the same rotation we made to the camera to the displacement vector
+  displacement.applyQuaternion(camera.quaternion.clone().multiply(backwardsRotation));
+  // Move the camera away from the centroid again
+  camera.position.sub(displacement);
+
+  for (var username in User.users) {
+    User.get(username).orientPicture();
   }
 }
 
 var fingerSmoothingLevel = 5;
-var fingerDirs = new Array(fingerSmoothingLevel);
+var fingerPositions = new Array(fingerSmoothingLevel);
 for (var i = 0; i < fingerSmoothingLevel; ++i)
-  fingerDirs[i] = [1, 1, 1];
-var fdi = 0;
+  fingerPositions[i] = [1, 1, 1];
+var fpi = 0;
 
 // Gets the position of the finger on the screen in Normalized Device Coordinates
 function getFingerOnScreenNDC(finger)
 {
   var pos = finger.tipPosition;
-  fingerDirs[fdi] = finger.direction;
-  fdi = (fdi+1)%fingerSmoothingLevel;
-  var dir = averageOfVectors(fingerDirs);
+  // WORKAROUND FOR UNEXPECTED DATA POINT
+  if (pos[2] === 0)
+    return fingerPointer;
+  var dir = finger.direction;
 
   // Get the position of the finger tip relative to screen centre
   pos[1] += leapHeight - screenHeight/2;
@@ -328,20 +352,24 @@ function getFingerOnScreenNDC(finger)
   pos[1] += dir[1]*factor;
   pos[2] += dir[2]*factor;
   // pos[0] & pos[1] are now mm from screen centre
-  // get the pointing position on the virtual screen from [-1, 1] (Normalized Device Coordinates)
+  // Calculate the pointing position on the virtual screen from [-1, 1] (Normalized Device Coordinates)
+  fingerPositions[fpi] = [pos[0] / (0.5*screenWidth), pos[1] / (0.5*screenHeight)];
+  fpi = (fpi+1)%fingerSmoothingLevel;
+  var smoothed = averageOfVectors(fingerPositions, fingerSmoothingLevel);
   var NDC = new THREE.Vector2();
-  NDC.x = pos[0] / (0.5*screenWidth);
-  NDC.y = pos[1] / (0.5*screenHeight);
+  NDC.x = smoothed[0];
+  NDC.y = smoothed[1];
   return NDC;
 }
 
-function averageOfVectors(vs)
+function averageOfVectors(vs, smoothingLevel)
 {
-  var result = [0, 0, 0];
-  for (var i = 0; i < 3; ++i) {
-    for (var j = 0; j < fingerSmoothingLevel; ++j)
+  var result = new Array(vs.length);
+  for (var i = 0; i < vs.length; ++i) {
+    result[i] = 0;
+    for (var j = 0; j < smoothingLevel; ++j)
       result[i] += vs[j][i];
-    result[i] /= fingerSmoothingLevel;
+    result[i] /= smoothingLevel;
   }
   return result;
 }
@@ -427,6 +455,7 @@ function main(i, u) {
   timeOfLastFrame = new Date().getTime();
   setInterval(mainLoop, 1000/60);
 }
+
 
 
 

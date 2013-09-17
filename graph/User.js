@@ -131,7 +131,7 @@ define(function() {
 
     // Add force from being dragged around via interaction
     if (this.grabbed) {
-      // Set the pointer depth in 3D to the node depth (in screen space)
+      // Set the pointer depth in 3D to the node depth (in NDC)
       var nodePos = projector.projectVector(this.sphere.position.clone(), camera);
       var pointerPos = new THREE.Vector3(Input.currentPointer.x, Input.currentPointer.y, nodePos.z);
       // Now in world space
@@ -190,6 +190,15 @@ define(function() {
     }
   }
 
+  // Face picture towards camera
+  User.prototype.orientPicture = function() {
+    this.catPicMesh.quaternion.copy(camera.quaternion);
+    this.catPicMesh.quaternion.x *= -1;
+    this.catPicMesh.quaternion.y *= -1;
+    this.catPicMesh.quaternion.z *= -1;
+    this.catPicMesh.quaternion.w *= -1;
+  }
+
   function Edge(followee, follower)
   {
     this.followee = followee;
@@ -218,6 +227,7 @@ define(function() {
   return User;
 
 });
+
 
 
 
