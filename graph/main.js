@@ -1,10 +1,17 @@
 "use strict";
 
+var canvasDiv;
 var scene;
 var camera;
 var projector = new THREE.Projector();
 var nearClip = 1, farClip = 1000;
 var renderer;
+
+// Oculus Rift variables. usingRift should be set externally.
+if (usingRift) {
+  var riftRenderer;
+  var vrState = new vr.State();
+}
 
 // Variables to control graph physics
 var springRestLength = 10;
@@ -37,6 +44,9 @@ var leapDistance = 250; // in mm
 var leapHeight = 0; //relative to the bottom of the display
 //var leapHeight = -250;
 
+// The context for drawing text bubbles
+var drawingCanvas, drawingContext;
+
 window.addEventListener('resize',
                           function(event) {
                             renderer.setSize(window.innerWidth, window.innerHeight);
@@ -45,22 +55,17 @@ window.addEventListener('resize',
                           }
                          );
 
-function mainLoop()
-{
-  nextUpdate();
-  draw();
-}
-
-
 function initializeScene()
 {
-  renderer = new THREE.WebGLRenderer({antialias:true});
-  renderer.setClearColor(0x000000, 1);
-
   var canvasWidth = window.innerWidth;
   var canvasHeight = window.innerHeight;
 
-  renderer.setSize(canvasWidth, canvasHeight);
+  renderer = new THREE.WebGLRenderer({clearColor: 0x000000, alpha: false, antialias: true});
+
+  if (usingRift)
+    riftRenderer = new THREE.OculusRiftEffect(renderer);
+  else
+    renderer.setSize(canvasWidth, canvasHeight);
 
   document.getElementById("WebGLCanvas").appendChild(renderer.domElement);
 
@@ -80,6 +85,34 @@ function initializeScene()
   pointerCursor = new THREE.Sprite(pointerSpriteMaterial);
   pointerCursor.scale.set(48, 48, 1);
   scene.add(pointerCursor);
+
+  // Set up the canvas for drawing text bubbles
+  drawingCanvas = document.createElement('canvas');
+  drawingCanvas.width = 500;
+  drawingCanvas.height = 40;
+  drawingContext = drawingCanvas.getContext('2d');
+
+  drawingContext.font = "Bold 16px Arial";
+	drawingContext.fillStyle = "rgba(255,0,0,0.95)";
+}
+
+function TextBubble(text)
+{
+  this.texture = new THREE.Texture(drawingCanvas);
+  this.material = new THREE.MeshBasicMaterial({map: this.texture});
+  this.material.transparent = true;
+  this.mesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(drawingCanvas.width, drawingCanvas.height),
+    this.material
+  );
+
+  if (text !== undefined)
+    this.setText(text);
+}
+
+TextBubble.prototype.setText = function(text) {
+  drawingContext.fillText(text, 0, 50);
+  this.texture.needsUpdate = true;
 }
 
 function buildGraph()
@@ -94,22 +127,6 @@ function buildGraph()
     rudd.addFollowers((new User(i)).name);
 
   //rudd.pinned = true;
-}
-
-var frameTimeLimit = 0.03;
-var timeOfLastFrame = 0;
-
-function nextUpdate()
-{
-  var currentTime = new Date().getTime();
-  var deltaTime = (currentTime - timeOfLastFrame)/1000;
-  timeOfLastFrame = currentTime;
-
-  // Limit the maximum time step to avoid unexpected results
-  if (deltaTime > frameTimeLimit)
-    update(frameTimeLimit);
-  else
-    update(deltaTime);
 }
 
 var lastMouseX = 0, lastMouseY = 0;
@@ -129,6 +146,24 @@ var grabWarmup = -2; // -1 is 'ready' value, -2 is 'finished' value
 function update(deltaTime)
 {
   Input.update();
+
+  // Rift config buttons
+  if (usingRift) {
+    if (Input.keyboard.keyPressed['f']) {
+      if (!vr.isFullScreen())
+        vr.enterFullScreen();
+      else
+        vr.exitFullScreen();
+    }
+    if (Input.keyboard.keyPressed[' '])
+      vr.resetHmdOrientation();
+    if (Input.keyboard.keyPressed['o'])
+      riftRenderer.setInterpupillaryDistance(
+                  riftRenderer.getInterpupillaryDistance() - 0.001);
+    if (Input.keyboard.keyPressed['p'])
+      riftRenderer.setInterpupillaryDistance(
+                  riftRenderer.getInterpupillaryDistance() + 0.001);
+  }
 
   var backwardsRotation = camera.quaternion.clone();
   backwardsRotation.x *= -1;
@@ -324,8 +359,13 @@ function update(deltaTime)
   camera.position.sub(displacement);
 
   for (var username in User.users) {
-    User.get(username).orientPicture();
+    var user = User.get(username);
+    orientTowardsCamera(user.catPicMesh);
+    if (user.textBubble !== undefined)
+      orientTowardsCamera(user.textBubble.mesh);
   }
+
+  Input.reset();
 }
 
 var fingerSmoothingLevel = 5;
@@ -337,10 +377,7 @@ var fpi = 0;
 // Gets the position of the finger on the screen in Normalized Device Coordinates
 function getFingerOnScreenNDC(finger)
 {
-  var pos = finger.tipPosition;
-  // WORKAROUND FOR UNEXPECTED DATA POINT
-  if (pos[2] === 0)
-    return fingerPointer;
+  var pos = finger.tipPosition.slice(0);
   var dir = finger.direction;
 
   // Get the position of the finger tip relative to screen centre
@@ -403,7 +440,11 @@ function getUserUnderPointer(pointer)
 
 function draw()
 {
-  renderer.render(scene, camera);
+  if (usingRift) {
+    var polled = vr.pollState(vrState);
+    riftRenderer.render(scene, camera, polled ? vrState : null);
+  }
+  else renderer.render(scene, camera);
 }
 
 function grabWithCurrentPointer()
@@ -421,6 +462,8 @@ function grabWithCurrentPointer()
 
     grabbedUser = selectedUser;
     grabbedUser.grabbed = true;
+    grabbedUser.textBubble = new TextBubble("TEST");
+    grabbedUser.sphere.add(grabbedUser.textBubble.mesh);
   }
 }
 
@@ -432,6 +475,15 @@ function releaseGrab()
   }
 }
 
+function orientTowardsCamera(mesh)
+{
+  mesh.quaternion.copy(camera.quaternion);
+  mesh.quaternion.x *= -1;
+  mesh.quaternion.y *= -1;
+  mesh.quaternion.z *= -1;
+  mesh.quaternion.w *= -1;
+}
+
 // Extra function for printing vectors when debugging
 function printVector(v)
 {
@@ -440,6 +492,40 @@ function printVector(v)
 
 require(["Input", "User"], main);
 var Input, User;
+
+var requestAnimFrame = (function() {
+    return  window.requestAnimationFrame       ||
+            window.webkitRequestAnimationFrame ||
+            window.mozRequestAnimationFrame    ||
+            window.oRequestAnimationFrame      ||
+            window.msRequestAnimationFrame     ||
+            function(callback) {
+                window.setTimeout(callback, 1000 / 60);
+            };
+})();
+
+function mainLoop()
+{
+  nextUpdate();
+  draw();
+  requestAnimFrame(mainLoop);
+}
+
+var frameTimeLimit = 0.03;
+var timeOfLastFrame = 0;
+
+function nextUpdate()
+{
+  var currentTime = new Date().getTime();
+  var deltaTime = (currentTime - timeOfLastFrame)/1000;
+  timeOfLastFrame = currentTime;
+
+  // Limit the maximum time step to avoid unexpected results
+  if (deltaTime > frameTimeLimit)
+    update(frameTimeLimit);
+  else
+    update(deltaTime);
+}
 
 function main(i, u) {
   Input = i;
@@ -453,11 +539,5 @@ function main(i, u) {
   initializeScene();
   buildGraph();
   timeOfLastFrame = new Date().getTime();
-  setInterval(mainLoop, 1000/60);
+  mainLoop();
 }
-
-
-
-
-
-

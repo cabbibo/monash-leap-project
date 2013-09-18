@@ -1,3 +1,5 @@
+"use strict";
+
 define(function() {
 
   // Variables for node models
@@ -190,15 +192,6 @@ define(function() {
     }
   }
 
-  // Face picture towards camera
-  User.prototype.orientPicture = function() {
-    this.catPicMesh.quaternion.copy(camera.quaternion);
-    this.catPicMesh.quaternion.x *= -1;
-    this.catPicMesh.quaternion.y *= -1;
-    this.catPicMesh.quaternion.z *= -1;
-    this.catPicMesh.quaternion.w *= -1;
-  }
-
   function Edge(followee, follower)
   {
     this.followee = followee;
@@ -227,6 +220,8 @@ define(function() {
   return User;
 
 });
+
+
 
 
 

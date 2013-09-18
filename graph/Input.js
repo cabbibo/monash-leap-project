@@ -1,8 +1,9 @@
-
 /*
 This module defines all objects and functions needed to handle input from
 the mouse, keyboard, and Leap Motion.
 */
+
+"use strict";
 
 define(function() {
 
@@ -116,6 +117,13 @@ define(function() {
 
   Input.update = function()
   {
+    // Fetch new Leap frames
+    Input.prevLeapFrame = Input.currLeapFrame;
+    Input.currLeapFrame = Input.leap.frame();
+  }
+
+  Input.reset = function()
+  {
     // Reset keys
     for (var t in Input.keyboard.keyPressed) {
       Input.keyboard.keyPressed[t] = false;
@@ -123,17 +131,12 @@ define(function() {
     for (var t in Input.keyboard.keyReleased) {
       Input.keyboard.keyReleased[t] = false;
     }
-
-    // Fetch new Leap frames
-    var newFrame = Input.leap.frame(0);
-    if (newFrame.valid) {
-      Input.prevLeapFrame = Input.currLeapFrame;
-      Input.currLeapFrame = newFrame;
-    }
   }
 
   return Input;
 });
+
+
 
 
 
