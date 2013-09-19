@@ -309,24 +309,11 @@ function update(deltaTime)
     highlightedUser.highlighted = true;
   }
 
-  if (Input.keyboard.key['a'])
-    camera.position.add(new THREE.Vector3(-keyboardMoveSpeed*deltaTime, 0, 0).applyQuaternion(camera.quaternion));
-
-  if (Input.keyboard.key['d'])
-    camera.position.add(new THREE.Vector3(keyboardMoveSpeed*deltaTime, 0, 0).applyQuaternion(camera.quaternion));
-
   if (Input.keyboard.key['w'])
     dz = -keyboardMoveSpeed*deltaTime;
 
   if (Input.keyboard.key['s'])
     dz = keyboardMoveSpeed*deltaTime;
-
-  if (Input.keyboard.key['q'])
-    camera.position.add(new THREE.Vector3(0, -keyboardMoveSpeed*deltaTime, 0).applyQuaternion(camera.quaternion));
-
-  if (Input.keyboard.key['e'])
-    camera.position.add(new THREE.Vector3(0, keyboardMoveSpeed*deltaTime, 0).applyQuaternion(camera.quaternion));
-
 
   for (var username in User.users) {
     User.get(username).calculateForces();

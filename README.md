@@ -3,15 +3,20 @@ monash-leap-project
 
 A student project at Monash University involving the use of the Leap Motion to explore Twitter content.
 
-Controls for 3D Graph Interaction (Keyboard & Mouse)
----------------------------------------------------
+## Controls for 3D Graph Interaction
 
-Forward/back movement: W/S
+### Keyboard & Mouse
 
-Left/right movement: A/D
+Zoom in and out: W/S
 
-Down/up movement: Q/E
+Select node: Left mouse button
 
-Look around: Hold right mouse button and move mouse
+Rotate around selected node: Hold right mouse button and move mouse
 
-Drag node: Hold left mouse button and move mouse
+Drag node (if enabled in code): Hold left mouse button and move mouse
+
+### Leap Motion
+
+Zoom and rotation: Sweeping movement of a single spread-palm hand
+
+Selection: Single finger point with one hand, spread-palm-to-closed-fist motion with another hand
