@@ -168,7 +168,7 @@ define(function() {
     this.velocity.add(this.accel.multiplyScalar(deltaTime));
 
     // Round to zero for very small velocities to stop slow drifting when node is not being dragged
-    if (this.selected) {
+    if (this.grabbed) {
       this.sphere.position.add(this.velocity.clone().multiplyScalar(deltaTime));
     }
     else {
@@ -220,6 +220,7 @@ define(function() {
   return User;
 
 });
+
 
 
 

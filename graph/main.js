@@ -1,37 +1,43 @@
 "use strict";
 
-var canvasDiv;
+// FEATURE FLAGS
+var grabbingEnabled = false;
+var usingRift = false;
+
+// Graphics variables
 var scene;
 var camera;
 var projector = new THREE.Projector();
 var nearClip = 1, farClip = 1000;
 var renderer;
 
-// Oculus Rift variables. usingRift should be set externally.
+// Oculus Rift variables
 if (usingRift) {
   var riftRenderer;
   var vrState = new vr.State();
 }
 
-// Variables to control graph physics
+// Graph physics variables
 var springRestLength = 10;
 var springK = 10;
 var repulsionStrength = 80;
 var dragConstant = 0.2;
-var keyboardMoveSpeed = 50;
-var mouseLookSensitivity = 2.5;
-
 var pointerDragForce = 20;
 var maxPointerDragAccel = 8000;
 var stabilisingForce = 50; // Constant force applied to all nodes to stop slow movements
 
-// Pointer-related variables
+// Control variables
+var keyboardMoveSpeed = 50;
+var mouseLookSensitivity = 2.5;
+
+// Pointer and selection variables
 var fingerPointer = new THREE.Vector2(); // The finger being used for pointing
 var pointerCursor; // The cursor that shows the position of the pointer
 
 var selectedUser = null;
 var grabbedUser = null;
 
+// Leap Motion variables
 var leapMetresPerMM = 0.5;
 var leapRadiansPerMM = 0.02;
 var screenAspectRatio = 16/9;
@@ -250,7 +256,7 @@ function update(deltaTime)
       if (fingers.length >= 4) {
         var t = hand.translation(Input.prevLeapFrame);
         dx = -t[0] * leapRadiansPerMM;
-        dy = -t[1] * leapRadiansPerMM;
+        dy = t[1] * leapRadiansPerMM;
         dz = -t[2] * leapMetresPerMM;
       }
     }
@@ -270,7 +276,7 @@ function update(deltaTime)
       }
       else if (grabWarmup !== -2) {
         grabWarmup = -2;
-        grabWithCurrentPointer();
+        selectWithCurrentPointer();
       }
     }
   }
@@ -279,8 +285,8 @@ function update(deltaTime)
   // to interpet mouse input or not
   if (Input.currentPointer === Input.mouse) {
     if (Input.mouse.rightHeld) {
-        var dx = (Input.mouse.x - lastMouseX) * mouseLookSensitivity;
-        var dy = (Input.mouse.y - lastMouseY) * 0.7 * mouseLookSensitivity;
+      dx = -(Input.mouse.x - lastMouseX) * mouseLookSensitivity;
+      dy = (Input.mouse.y - lastMouseY) * 0.7 * mouseLookSensitivity;
     }
   }
 
@@ -303,28 +309,24 @@ function update(deltaTime)
     highlightedUser.highlighted = true;
   }
 
-  if (dz !== 0)
-    camera.position.add(new THREE.Vector3(0, 0, dz).applyQuaternion(camera.quaternion));
-
-
-  if (Input.keyboard.key['a']) {
+  if (Input.keyboard.key['a'])
     camera.position.add(new THREE.Vector3(-keyboardMoveSpeed*deltaTime, 0, 0).applyQuaternion(camera.quaternion));
-  }
-  if (Input.keyboard.key['d']) {
+
+  if (Input.keyboard.key['d'])
     camera.position.add(new THREE.Vector3(keyboardMoveSpeed*deltaTime, 0, 0).applyQuaternion(camera.quaternion));
-  }
-  if (Input.keyboard.key['w']) {
-    camera.position.add(new THREE.Vector3(0, 0, -keyboardMoveSpeed*deltaTime).applyQuaternion(camera.quaternion));
-  }
-  if (Input.keyboard.key['s']) {
-    camera.position.add(new THREE.Vector3(0, 0, keyboardMoveSpeed*deltaTime).applyQuaternion(camera.quaternion));
-  }
-  if (Input.keyboard.key['q']) {
+
+  if (Input.keyboard.key['w'])
+    dz = -keyboardMoveSpeed*deltaTime;
+
+  if (Input.keyboard.key['s'])
+    dz = keyboardMoveSpeed*deltaTime;
+
+  if (Input.keyboard.key['q'])
     camera.position.add(new THREE.Vector3(0, -keyboardMoveSpeed*deltaTime, 0).applyQuaternion(camera.quaternion));
-  }
-  if (Input.keyboard.key['e']) {
+
+  if (Input.keyboard.key['e'])
     camera.position.add(new THREE.Vector3(0, keyboardMoveSpeed*deltaTime, 0).applyQuaternion(camera.quaternion));
-  }
+
 
   for (var username in User.users) {
     User.get(username).calculateForces();
@@ -346,12 +348,12 @@ function update(deltaTime)
   camera.position.add(displacement);
 
   // Rotate the camera
-  if (dx !== 0) {
-    camera.rotateOnAxis(new THREE.Vector3(0, 1, 0).applyQuaternion(backwardsRotation), dx);
-  }
-  if (dy !== 0) {
-    camera.rotateOnAxis(new THREE.Vector3(1, 0, 0), -dy);
-  }
+  if (dx !== 0)
+    camera.rotateOnAxis(new THREE.Vector3(0, 1, 0), dx);
+  if (dy !== 0)
+    camera.rotateOnAxis(new THREE.Vector3(1, 0, 0), dy);
+  if (dz !== 0)
+    camera.position.add(new THREE.Vector3(0, 0, dz).applyQuaternion(camera.quaternion));
 
   // Apply the same rotation we made to the camera to the displacement vector
   displacement.applyQuaternion(camera.quaternion.clone().multiply(backwardsRotation));
@@ -447,7 +449,7 @@ function draw()
   else renderer.render(scene, camera);
 }
 
-function grabWithCurrentPointer()
+function selectWithCurrentPointer()
 {
   // Safeguard in case we still have somebody grabbed
   if (grabbedUser !== null) {
@@ -460,10 +462,12 @@ function grabWithCurrentPointer()
     selectedUser = newSelectedUser;
     selectedUser.selected = true;
 
-    grabbedUser = selectedUser;
-    grabbedUser.grabbed = true;
-    grabbedUser.textBubble = new TextBubble("TEST");
-    grabbedUser.sphere.add(grabbedUser.textBubble.mesh);
+    selectedUser.textBubble = new TextBubble("TEST");
+    selectedUser.sphere.add(selectedUser.textBubble.mesh);
+    if (grabbingEnabled) {
+      grabbedUser = selectedUser;
+      grabbedUser.grabbed = true;
+    }
   }
 }
 
@@ -494,14 +498,14 @@ require(["Input", "User"], main);
 var Input, User;
 
 var requestAnimFrame = (function() {
-    return  window.requestAnimationFrame       ||
-            window.webkitRequestAnimationFrame ||
-            window.mozRequestAnimationFrame    ||
-            window.oRequestAnimationFrame      ||
-            window.msRequestAnimationFrame     ||
-            function(callback) {
-                window.setTimeout(callback, 1000 / 60);
-            };
+  return  window.requestAnimationFrame ||
+    window.webkitRequestAnimationFrame ||
+    window.mozRequestAnimationFrame    ||
+    window.oRequestAnimationFrame      ||
+    window.msRequestAnimationFrame     ||
+    function(callback) {
+    window.setTimeout(callback, 1000 / 60);
+  };
 })();
 
 function mainLoop()
@@ -532,7 +536,7 @@ function main(i, u) {
   User = u;
 
   // Change the selected user to the user under the mouse and grab the user under the mouse
-  Input.mouse.leftPressedCallback = grabWithCurrentPointer;
+  Input.mouse.leftPressedCallback = selectWithCurrentPointer;
 
   Input.mouse.leftReleasedCallback = releaseGrab;
 
@@ -541,3 +545,4 @@ function main(i, u) {
   timeOfLastFrame = new Date().getTime();
   mainLoop();
 }
+
