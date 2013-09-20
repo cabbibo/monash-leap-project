@@ -30,12 +30,13 @@ var stabilisingForce = 50; // Constant force applied to all nodes to stop slow m
 var keyboardMoveSpeed = 50;
 var mouseLookSensitivity = 2.5;
 
-// Pointer and selection variables
+// Pointer/selection/interaction variables
 var fingerPointer = new THREE.Vector2(); // The finger being used for pointing
 var pointerCursor; // The cursor that shows the position of the pointer
 
 var selectedUser = null;
 var grabbedUser = null;
+var nodeSwitchingTime = 0.6;
 
 // Leap Motion variables
 var leapMetresPerMM = 0.5;
@@ -61,6 +62,12 @@ window.addEventListener('resize',
                           }
                          );
 
+// Models the motion as we move the camera between nodes
+function smoothMoveFunction(x)
+{
+  return 0.5*Math.atan(3.1148154*(x-0.5)) + 0.5;
+}
+
 function initializeScene()
 {
   var canvasWidth = window.innerWidth;
@@ -78,8 +85,7 @@ function initializeScene()
   scene = new THREE.Scene();
 
   camera = new THREE.PerspectiveCamera(45, canvasWidth / canvasHeight, nearClip, farClip);
-  camera.position.set(0, 0, 60);
-  camera.lookAt(new THREE.Vector3(0, 0, 0));
+  camera.position.set(0, 0, 50);
   scene.add(camera);
 
   var pointLight = new THREE.PointLight(0xFFFFFF);
@@ -94,8 +100,8 @@ function initializeScene()
 
   // Set up the canvas for drawing text bubbles
   drawingCanvas = document.createElement('canvas');
-  drawingCanvas.width = 500;
-  drawingCanvas.height = 40;
+  drawingCanvas.width = 200;
+  drawingCanvas.height = 16;
   drawingContext = drawingCanvas.getContext('2d');
 
   drawingContext.font = "Bold 16px Arial";
@@ -105,7 +111,7 @@ function initializeScene()
 function TextBubble(text)
 {
   this.texture = new THREE.Texture(drawingCanvas);
-  this.material = new THREE.MeshBasicMaterial({map: this.texture});
+  this.material = new THREE.MeshBasicMaterial({map: this.texture, side: THREE.doubleSide});
   this.material.transparent = true;
   this.mesh = new THREE.Mesh(
     new THREE.PlaneGeometry(drawingCanvas.width, drawingCanvas.height),
@@ -117,7 +123,7 @@ function TextBubble(text)
 }
 
 TextBubble.prototype.setText = function(text) {
-  drawingContext.fillText(text, 0, 50);
+  drawingContext.fillText(text, 0, 0);
   this.texture.needsUpdate = true;
 }
 
@@ -129,10 +135,10 @@ function buildGraph()
   User.getOrCreate("kevinrudd").addFollowers(["juliagillard", "anthonyalbanese", "pennywong"]);
   User.getOrCreate("juliagillard").addFollowers(["kevinrudd"]);
   var rudd = User.get("kevinrudd");
-  for (var i = 1; i < 100; ++i)
+  for (var i = 1; i < 40; ++i)
     rudd.addFollowers((new User(i)).name);
 
-  //rudd.pinned = true;
+  select(rudd);
 }
 
 var lastMouseX = 0, lastMouseY = 0;
@@ -149,9 +155,24 @@ var grabbingHandGrace = 0;
 var maxGrabWarmup = 0.2;
 var grabWarmup = -2; // -1 is 'ready' value, -2 is 'finished' value
 
+var coroutines = new Array();
+
+function setCoroutine(data, func)
+{
+  data.func = func;
+  coroutines.push(data);
+}
+
 function update(deltaTime)
 {
   Input.update();
+
+  for (var i = 0; i < coroutines.length;) {
+    if (coroutines[i].func(coroutines[i], deltaTime))
+      coroutines.splice(i, 1);
+    else
+      ++i;
+  }
 
   // Rift config buttons
   if (usingRift) {
@@ -301,12 +322,8 @@ function update(deltaTime)
   // Highlight the user last under the pointer
   var newHighlightedUser = getUserUnderPointer(Input.currentPointer);
   if (newHighlightedUser !== null) {
-    if (highlightedUser !== null) {
-      highlightedUser.highlighted = false;
-      highlightedUser = null;
-    }
-    highlightedUser = newHighlightedUser;
-    highlightedUser.highlighted = true;
+    unhighlight();
+    highlight(newHighlightedUser);
   }
 
   if (Input.keyboard.key['w'])
@@ -319,18 +336,13 @@ function update(deltaTime)
     User.get(username).calculateForces();
   }
 
-  var centroid = new THREE.Vector3();
-
   // Apply net force for each node
   for (var username in User.users) {
     var user = User.get(username);
     user.updatePosition(deltaTime);
-    centroid.add(user.sphere.position);
   }
 
-  centroid.divideScalar(Object.keys(User.users).length);
-
-  var displacement = centroid.clone().sub(camera.position);
+  var displacement = centreOfFocus.clone().sub(camera.position);
   // Move the camera to the centroid
   camera.position.add(displacement);
 
@@ -350,15 +362,16 @@ function update(deltaTime)
   for (var username in User.users) {
     var user = User.get(username);
     orientTowardsCamera(user.catPicMesh);
-    if (user.textBubble !== undefined)
+    if (user.textBubble !== undefined) {
       orientTowardsCamera(user.textBubble.mesh);
+    }
   }
 
   Input.reset();
 }
 
-var fingerSmoothingLevel = 5;
-var fingerPositions = new Array(fingerSmoothingLevel);
+var fingerSmoothingLevel = 3;
+var fingerPositions = new Array();
 for (var i = 0; i < fingerSmoothingLevel; ++i)
   fingerPositions[i] = [1, 1, 1];
 var fpi = 0;
@@ -382,20 +395,21 @@ function getFingerOnScreenNDC(finger)
   fingerPositions[fpi] = [pos[0] / (0.5*screenWidth), pos[1] / (0.5*screenHeight)];
   fpi = (fpi+1)%fingerSmoothingLevel;
   var smoothed = averageOfVectors(fingerPositions, fingerSmoothingLevel);
+  console.log(smoothed);
   var NDC = new THREE.Vector2();
   NDC.x = smoothed[0];
   NDC.y = smoothed[1];
   return NDC;
 }
 
-function averageOfVectors(vs, smoothingLevel)
+function averageOfVectors(vectors, numVectors)
 {
-  var result = new Array(vs.length);
-  for (var i = 0; i < vs.length; ++i) {
+  var result = new Array();
+  for (var i = 0; i < vectors[0].length; ++i) {
     result[i] = 0;
-    for (var j = 0; j < smoothingLevel; ++j)
-      result[i] += vs[j][i];
-    result[i] /= smoothingLevel;
+    for (var j = 0; j < numVectors; ++j)
+      result[i] += vectors[j][i];
+    result[i] /= numVectors;
   }
   return result;
 }
@@ -439,23 +453,73 @@ function draw()
 function selectWithCurrentPointer()
 {
   // Safeguard in case we still have somebody grabbed
-  if (grabbedUser !== null) {
-    grabbedUser.grabbed = false;
-    grabbedUser = null;
-  }
+  releaseGrab();
   var newSelectedUser = getUserUnderPointer(Input.currentPointer);
   if (newSelectedUser !== null) {
-    if (selectedUser !== null) selectedUser.selected = false;
-    selectedUser = newSelectedUser;
-    selectedUser.selected = true;
+    select(newSelectedUser);
+    if (grabbingEnabled) grab(selectedUser);
 
     selectedUser.textBubble = new TextBubble("TEST");
     selectedUser.sphere.add(selectedUser.textBubble.mesh);
-    if (grabbingEnabled) {
-      grabbedUser = selectedUser;
-      grabbedUser.grabbed = true;
-    }
   }
+}
+
+function highlight(user)
+{
+  highlightedUser = user;
+  user.highlighted = true;
+}
+
+function unhighlight()
+{
+  if (highlightedUser !== null) {
+    highlightedUser.highlighted = false;
+    highlightedUser = null;
+  }
+}
+
+var centreOfFocus = new THREE.Vector3();
+
+// Select the given user. We allow no deselection
+// without subsequent selection because we must
+// always have a user as the centre of focus.
+function select(user)
+{
+  if (selectedUser !== null) {
+    selectedUser.selected = false;
+    var displacement = user.sphere.position.clone().sub(centreOfFocus);
+    //centreOfFocus.add(displacement);
+    //camera.position.add(displacement);
+    setCoroutine({currentTime: 0, endTime: nodeSwitchingTime, focusStartPos: centreOfFocus.clone(), cameraStartPos: camera.position.clone(), displacement: displacement},
+                 function(o, deltaTime) {
+                   o.currentTime += deltaTime;
+
+                   if (o.currentTime >= o.endTime) {
+                     centreOfFocus.copy(o.focusStartPos).add(o.displacement);
+                     camera.position.copy(o.cameraStartPos).add(o.displacement);
+                     return true;
+                   }
+                   else {
+                     var fracDisplacement = o.displacement.clone().multiplyScalar(smoothMoveFunction(o.currentTime/o.endTime));
+                     centreOfFocus.copy(o.focusStartPos).add(fracDisplacement);
+                     camera.position.copy(o.cameraStartPos).add(fracDisplacement);
+                   }
+                 }
+    );
+  }
+  else {
+    centreOfFocus.copy(user.sphere.position);
+    camera.lookAt(centreOfFocus);
+  }
+
+  selectedUser = user;
+  user.selected = true;
+}
+
+function grab(user)
+{
+  grabbedUser = user;
+  user.grabbed = true;
 }
 
 function releaseGrab()
@@ -532,4 +596,7 @@ function main(i, u) {
   timeOfLastFrame = new Date().getTime();
   mainLoop();
 }
+
+
+
 

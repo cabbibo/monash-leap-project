@@ -162,25 +162,28 @@ define(function() {
   }
 
   User.prototype.updatePosition = function(deltaTime) {
-    // Add drag force
-    this.accel.sub(this.velocity.clone().multiplyScalar(dragConstant*this.velocity.length()));
-    // Update velocity
-    this.velocity.add(this.accel.multiplyScalar(deltaTime));
+    // We don't move selected users. They become the centre of focus.
+    if (!this.selected) {
+      // Add drag force
+      this.accel.sub(this.velocity.clone().multiplyScalar(dragConstant*this.velocity.length()));
+      // Update velocity
+      this.velocity.add(this.accel.multiplyScalar(deltaTime));
 
-    // Round to zero for very small velocities to stop slow drifting when node is not being dragged
-    if (this.grabbed) {
-      this.sphere.position.add(this.velocity.clone().multiplyScalar(deltaTime));
-    }
-    else {
-      var vmag = this.velocity.length();
-      var vdir = this.velocity.clone().divideScalar(vmag);
-      var negatedVelocity = deltaTime*stabilisingForce;
-      if (vmag > negatedVelocity) {
-        vmag -= negatedVelocity;
-        // Update position
-        this.sphere.position.add(vdir.multiplyScalar(deltaTime*vmag));
+      // Round to zero for very small velocities to stop slow drifting when node is not being dragged
+      if (this.grabbed) {
+        this.sphere.position.add(this.velocity.clone().multiplyScalar(deltaTime));
       }
-      else this.velocity.set(0, 0, 0);
+      else {
+        var vmag = this.velocity.length();
+        var vdir = this.velocity.clone().divideScalar(vmag);
+        var negatedVelocity = deltaTime*stabilisingForce;
+        if (vmag > negatedVelocity) {
+          vmag -= negatedVelocity;
+          // Update position
+          this.sphere.position.add(vdir.multiplyScalar(deltaTime*vmag));
+        }
+        else this.velocity.set(0, 0, 0);
+      }
     }
 
     // Reset forces
@@ -220,6 +223,7 @@ define(function() {
   return User;
 
 });
+
 
 
 
