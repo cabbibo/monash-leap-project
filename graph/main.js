@@ -36,7 +36,11 @@ var pointerCursor; // The cursor that shows the position of the pointer
 
 var selectedUser = null;
 var grabbedUser = null;
-var nodeSwitchingTime = 0.6;
+
+// Node switching transition variables
+var nodeSwitchingTime = 2;
+var maxSwitchingSpeedMultiplier = 5;
+var nodeSwitchingCurveConstant = 4 / (nodeSwitchingTime * nodeSwitchingTime) * (maxSwitchingSpeedMultiplier-1);
 
 // Leap Motion variables
 var leapMetresPerMM = 0.5;
@@ -461,21 +465,26 @@ function select(user)
   if (selectedUser !== null) {
     selectedUser.deselect();
     var displacement = user.sphere.position.clone().sub(centreOfFocus);
-    //centreOfFocus.add(displacement);
-    //camera.position.add(displacement);
-    setCoroutine({currentTime: 0, endTime: nodeSwitchingTime, focusStartPos: centreOfFocus.clone(), cameraStartPos: camera.position.clone(), displacement: displacement},
+
+
+    setCoroutine({currentTime: 0, endTime: nodeSwitchingTime, target: user.sphere.position, displacement: new THREE.Vector3()},
                  function(o, deltaTime) {
+                   function speedMultiplier(x) {
+                     return 1 - nodeSwitchingCurveConstant*x*(x-o.endTime);
+                   }
+
+                   deltaTime *= speedMultiplier(o.currentTime);
                    o.currentTime += deltaTime;
 
                    if (o.currentTime >= o.endTime) {
-                     centreOfFocus.add(o.displacement.multiplyScalar(deltaTime - (o.currentTime - o.endTime)));
-                     camera.position.add(o.displacement.multiplyScalar(deltaTime - (o.currentTime - o.endTime)));
+                     camera.position.add(displacement.copy(o.target).sub(centreOfFocus));
+                     centreOfFocus.copy(o.target);
                      return true;
                    }
                    else {
-                     var fracDisplacement = o.displacement.clone().multiplyScalar(deltaTime/o.endTime);
-                     centreOfFocus.add(fracDisplacement);
-                     camera.position.add(fracDisplacement);
+                     o.displacement.copy(o.target).sub(centreOfFocus).multiplyScalar(deltaTime/(o.endTime-o.currentTime));
+                     centreOfFocus.add(o.displacement);
+                     camera.position.add(o.displacement);
                    }
                  }
     );
