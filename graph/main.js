@@ -51,7 +51,7 @@ var leapDistance = 250; // in mm
 var leapHeight = 0; //relative to the bottom of the display
 //var leapHeight = -250;
 
-// The context for drawing text bubbles
+// The context for drawing 2d graphics
 var drawingCanvas, drawingContext;
 
 window.addEventListener('resize',
@@ -98,45 +98,24 @@ function initializeScene()
   pointerCursor.scale.set(48, 48, 1);
   scene.add(pointerCursor);
 
-  // Set up the canvas for drawing text bubbles
+  // Create the canvas for drawing 2d graphics
   drawingCanvas = document.createElement('canvas');
-  drawingCanvas.width = 200;
-  drawingCanvas.height = 16;
   drawingContext = drawingCanvas.getContext('2d');
-
-  drawingContext.font = "Bold 16px Arial";
-	drawingContext.fillStyle = "rgba(255,0,0,0.95)";
-}
-
-function TextBubble(text)
-{
-  this.texture = new THREE.Texture(drawingCanvas);
-  this.material = new THREE.MeshBasicMaterial({map: this.texture, side: THREE.doubleSide});
-  this.material.transparent = true;
-  this.mesh = new THREE.Mesh(
-    new THREE.PlaneGeometry(drawingCanvas.width, drawingCanvas.height),
-    this.material
-  );
-
-  if (text !== undefined)
-    this.setText(text);
-}
-
-TextBubble.prototype.setText = function(text) {
-  drawingContext.fillText(text, 0, 0);
-  this.texture.needsUpdate = true;
 }
 
 function buildGraph()
 {
   User.getOrCreate("elonmusk").addFollowers(["nick", "tyson", "keren", "jon"]);
   User.getOrCreate("nick").addFollowers(["matt", "jordan", "michael"]);
-  User.getOrCreate("obama").addFollowers(["elonmusk", "nick", "tyson", "kevinrudd", "jordan", "sam", "dilpreet"]);
-  User.getOrCreate("kevinrudd").addFollowers(["juliagillard", "anthonyalbanese", "pennywong"]);
+  User.getOrCreate("obama").addFollowers(["elonmusk", "nick", "tyson", "kevinrudd", "jordan", "sam", "dilpreet", "tom", "harry", "frank"]);
+  User.getOrCreate("kevinrudd").addFollowers(["juliagillard", "anthonyalbanese", "pennywong", "johncarmack"]);
   User.getOrCreate("juliagillard").addFollowers(["kevinrudd"]);
   var rudd = User.get("kevinrudd");
   for (var i = 1; i < 40; ++i)
     rudd.addFollowers((new User(i)).name);
+  User.getOrCreate("johncarmack").addFollowers(["nick", "heath", "jonathonblow", "branislav", "davidrosen", "palmerluckey"]);
+  User.getOrCreate("jonathonblow").addFollowers(["nick", "davidrosen", "jenovachen", "davidrosen"]);
+  User.getOrCreate("branislav").addFollowers(["nick", "fred", "george"]);
 
   select(rudd);
 }
@@ -361,10 +340,7 @@ function update(deltaTime)
 
   for (var username in User.users) {
     var user = User.get(username);
-    orientTowardsCamera(user.catPicMesh);
-    if (user.textBubble !== undefined) {
-      orientTowardsCamera(user.textBubble.mesh);
-    }
+    orientTowardsCamera(user.displayPicMesh);
   }
 
   Input.reset();
@@ -458,22 +434,19 @@ function selectWithCurrentPointer()
   if (newSelectedUser !== null) {
     select(newSelectedUser);
     if (grabbingEnabled) grab(selectedUser);
-
-    selectedUser.textBubble = new TextBubble("TEST");
-    selectedUser.sphere.add(selectedUser.textBubble.mesh);
   }
 }
 
 function highlight(user)
 {
   highlightedUser = user;
-  user.highlighted = true;
+  user.highlight();
 }
 
 function unhighlight()
 {
   if (highlightedUser !== null) {
-    highlightedUser.highlighted = false;
+    highlightedUser.unhighlight();
     highlightedUser = null;
   }
 }
@@ -486,7 +459,7 @@ var centreOfFocus = new THREE.Vector3();
 function select(user)
 {
   if (selectedUser !== null) {
-    selectedUser.selected = false;
+    selectedUser.deselect();
     var displacement = user.sphere.position.clone().sub(centreOfFocus);
     //centreOfFocus.add(displacement);
     //camera.position.add(displacement);
@@ -495,14 +468,14 @@ function select(user)
                    o.currentTime += deltaTime;
 
                    if (o.currentTime >= o.endTime) {
-                     centreOfFocus.copy(o.focusStartPos).add(o.displacement);
-                     camera.position.copy(o.cameraStartPos).add(o.displacement);
+                     centreOfFocus.add(o.displacement.multiplyScalar(deltaTime - (o.currentTime - o.endTime)));
+                     camera.position.add(o.displacement.multiplyScalar(deltaTime - (o.currentTime - o.endTime)));
                      return true;
                    }
                    else {
-                     var fracDisplacement = o.displacement.clone().multiplyScalar(smoothMoveFunction(o.currentTime/o.endTime));
-                     centreOfFocus.copy(o.focusStartPos).add(fracDisplacement);
-                     camera.position.copy(o.cameraStartPos).add(fracDisplacement);
+                     var fracDisplacement = o.displacement.clone().multiplyScalar(deltaTime/o.endTime);
+                     centreOfFocus.add(fracDisplacement);
+                     camera.position.add(fracDisplacement);
                    }
                  }
     );
@@ -513,19 +486,19 @@ function select(user)
   }
 
   selectedUser = user;
-  user.selected = true;
+  user.select();
 }
 
 function grab(user)
 {
   grabbedUser = user;
-  user.grabbed = true;
+  user.grab();
 }
 
 function releaseGrab()
 {
   if (grabbedUser !== null) {
-    grabbedUser.grabbed = false;
+    grabbedUser.releaseGrab();
     grabbedUser = null;
   }
 }
@@ -596,6 +569,7 @@ function main(i, u) {
   timeOfLastFrame = new Date().getTime();
   mainLoop();
 }
+
 
 
 

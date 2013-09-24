@@ -8,7 +8,7 @@ the mouse, keyboard, and Leap Motion.
 define(function() {
 
   var Input = {};
-  Input.mouse = new THREE.Vector2(0, 0);
+  Input.mouse = new THREE.Vector2(-999999, -999999);
   Input.currentPointer = Input.mouse;
 
   // Leap controller variables
@@ -135,6 +135,7 @@ define(function() {
 
   return Input;
 });
+
 
 
 

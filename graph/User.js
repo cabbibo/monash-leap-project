@@ -10,8 +10,8 @@ define(function() {
   var standardMat = new THREE.MeshLambertMaterial({color: 0xE0FFFF, opacity: 0.3, transparent: true});
   var highlightedMat = new THREE.MeshLambertMaterial({color: 0xFF8800, opacity: 0.3, transparent: true});
   var selectedMat = new THREE.MeshLambertMaterial({color: 0x77FF77, opacity: 0.3, transparent: true});
-  var catFaceTexture = THREE.ImageUtils.loadTexture("cat-face-grey.jpg");
-  var catFaceMaterial = new THREE.MeshBasicMaterial({map: catFaceTexture});
+  var displayPicTexture = THREE.ImageUtils.loadTexture("cat-face-grey.jpg");
+  var displayPicMaterial = new THREE.MeshBasicMaterial({map: displayPicTexture});
 
 
   function User(name)
@@ -36,8 +36,17 @@ define(function() {
     this.followers = new Array();
     this.followerEdges = new Array();
 
-    this.catPicMesh = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 1.3, 1, 1), catFaceMaterial);
-    this.sphere.add(this.catPicMesh);
+    this.displayPicMesh = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 1.3, 1, 1), displayPicMaterial);
+    this.sphere.add(this.displayPicMesh);
+
+    this.textBubble = new TextBubble(this.name);
+    this.displayPicMesh.add(this.textBubble.mesh);
+    this.textBubble.mesh.position.set(0, textBubbleVerticalDisplacement, 0);
+    this.textBubble.mesh.visible = false;
+
+    this.highlighted = false;
+    this.selected = false;
+    this.grabbed = false;
   }
 
   // An associative array to store all created users
@@ -195,6 +204,42 @@ define(function() {
     }
   }
 
+  User.prototype.highlight = function() {
+    this.highlighted = true;
+    if (!this.selected) {
+      this.textBubble.redraw();
+      this.textBubble.mesh.visible = true;
+    }
+  }
+
+  User.prototype.unhighlight = function() {
+    this.highlighted = false;
+    if(!this.selected)
+      this.textBubble.mesh.visible = false;
+  }
+
+  User.prototype.select = function() {
+    this.selected = true;
+    if (!this.highlighted) {
+      this.textBubble.redraw();
+      this.textBubble.mesh.visible = true;
+    }
+  }
+
+  User.prototype.deselect = function() {
+    this.selected = false;
+    if (!this.highlighted)
+      this.textBubble.mesh.visible = false;
+  }
+
+  User.prototype.grab = function() {
+    this.grabbed = true;
+  }
+
+  User.prototype.releaseGrab = function() {
+    this.grabbed = false;
+  }
+
   function Edge(followee, follower)
   {
     this.followee = followee;
@@ -220,9 +265,42 @@ define(function() {
     scene.remove(this.lineMesh);
   }
 
+  /*
+  The Text Bubble prototype which displays information about a User
+  */
+
+  var textWidth = 480;
+  var textHeight = 64;
+  var textBubbleScale = 0.5;
+  var textBubbleVerticalDisplacement = 1.5;
+
+  function TextBubble(text)
+  {
+    this.texture = new THREE.Texture(drawingCanvas);
+    this.material = new THREE.MeshBasicMaterial({map: this.texture});
+    this.material.transparent = false;
+    this.mesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(textBubbleScale*(textWidth/textHeight), textBubbleScale),
+      this.material
+    );
+    this.text = text;
+  }
+
+  TextBubble.prototype.redraw = function() {
+    drawingCanvas.width = textWidth;
+    drawingCanvas.height = textHeight;
+    drawingContext.font = "Bold "+(textHeight-8)+"px Arial";
+	  drawingContext.fillStyle = 'white';
+    drawingContext.fillRect(0, 0, textWidth, textHeight);
+    drawingContext.fillStyle = 'black';
+    drawingContext.fillText(this.text, 8, textHeight-12);
+    this.texture.needsUpdate = true;
+  }
+
   return User;
 
 });
+
 
 
 
