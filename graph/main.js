@@ -17,15 +17,6 @@ if (usingRift) {
   var vrState = new vr.State();
 }
 
-// Graph physics variables
-var springRestLength = 10;
-var springK = 10;
-var repulsionStrength = 80;
-var dragConstant = 0.2;
-var pointerDragForce = 20;
-var maxPointerDragAccel = 8000;
-var stabilisingForce = 50; // Constant force applied to all nodes to stop slow movements
-
 // Control variables
 var keyboardMoveSpeed = 50;
 var mouseLookSensitivity = 2.5;
@@ -34,8 +25,8 @@ var mouseLookSensitivity = 2.5;
 var fingerPointer = new THREE.Vector2(); // The finger being used for pointing
 var pointerCursor; // The cursor that shows the position of the pointer
 
-var selectedUser = null;
-var grabbedUser = null;
+var selectedNode = null;
+var grabbedNode = null;
 
 // Node switching transition variables
 var nodeSwitchingTime = 2;
@@ -89,7 +80,7 @@ function initializeScene()
   scene = new THREE.Scene();
 
   camera = new THREE.PerspectiveCamera(45, canvasWidth / canvasHeight, nearClip, farClip);
-  camera.position.set(0, 0, 50);
+  camera.position.set(0, 0, 30);
   scene.add(camera);
 
   var pointLight = new THREE.PointLight(0xFFFFFF);
@@ -109,23 +100,13 @@ function initializeScene()
 
 function buildGraph()
 {
-  User.getOrCreate("elonmusk").addFollowers(["nick", "tyson", "keren", "jon"]);
-  User.getOrCreate("nick").addFollowers(["matt", "jordan", "michael"]);
-  User.getOrCreate("obama").addFollowers(["elonmusk", "nick", "tyson", "kevinrudd", "jordan", "sam", "dilpreet", "tom", "harry", "frank"]);
-  User.getOrCreate("kevinrudd").addFollowers(["juliagillard", "anthonyalbanese", "pennywong", "johncarmack"]);
-  User.getOrCreate("juliagillard").addFollowers(["kevinrudd"]);
-  var rudd = User.get("kevinrudd");
-  for (var i = 1; i < 40; ++i)
-    rudd.addFollowers((new User(i)).name);
-  User.getOrCreate("johncarmack").addFollowers(["nick", "heath", "jonathonblow", "branislav", "davidrosen", "palmerluckey"]);
-  User.getOrCreate("jonathonblow").addFollowers(["nick", "davidrosen", "jenovachen", "davidrosen"]);
-  User.getOrCreate("branislav").addFollowers(["nick", "fred", "george"]);
-
-  select(rudd);
+  var nick = new Node("nick");
+  nick.show();
+  select(nick);
 }
 
 var lastMouseX = 0, lastMouseY = 0;
-var highlightedUser = null;
+var highlightedNode = null;
 var fingerLostMaxLenience = 10;
 var fingerLostLenience = 0;
 var pointingHandID = -1;
@@ -204,7 +185,7 @@ function update(deltaTime)
     }
     else pointingHandGrace = maxPointingHandGrace;
 
-    if (!grabbingHandCheckedIn && grabbedUser != null) {
+    if (!grabbingHandCheckedIn && grabbedNode != null) {
       --grabbingHandGrace;
       if (grabbingHandGrace < 0) {
         releaseGrab();
@@ -302,11 +283,11 @@ function update(deltaTime)
   pointerCursor.position.x = pc.x;
   pointerCursor.position.y = pc.y;
 
-  // Highlight the user last under the pointer
-  var newHighlightedUser = getUserUnderPointer(Input.currentPointer);
-  if (newHighlightedUser !== null) {
+  // Highlight the node last under the pointer
+  var newHighlightedNode = getNodeUnderPointer(Input.currentPointer);
+  if (newHighlightedNode !== null) {
     unhighlight();
-    highlight(newHighlightedUser);
+    highlight(newHighlightedNode);
   }
 
   if (Input.keyboard.key['w'])
@@ -315,17 +296,7 @@ function update(deltaTime)
   if (Input.keyboard.key['s'])
     dz = keyboardMoveSpeed*deltaTime;
 
-  for (var username in User.users) {
-    User.get(username).calculateForces();
-  }
-
-  // Apply net force for each node
-  for (var username in User.users) {
-    var user = User.get(username);
-    user.updatePosition(deltaTime);
-  }
-
-  var displacement = centreOfFocus.clone().sub(camera.position);
+    var displacement = centreOfFocus.clone().sub(camera.position);
   // Move the camera to the centroid
   camera.position.add(displacement);
 
@@ -342,9 +313,17 @@ function update(deltaTime)
   // Move the camera away from the centroid again
   camera.position.sub(displacement);
 
-  for (var username in User.users) {
-    var user = User.get(username);
-    orientTowardsCamera(user.displayPicMesh);
+  for (var username in Node.shownNodes) {
+    Node.shownNodes[username].calculateForces();
+  }
+
+  // Apply net force for each node
+  for (var username in Node.shownNodes) {
+    Node.shownNodes[username].updatePosition(deltaTime);
+  }
+
+  for (var username in Node.shownNodes) {
+    Node.shownNodes[username].orient(camera.quaternion);
   }
 
   Input.reset();
@@ -402,7 +381,7 @@ function NDCToPixelCoordinates(NDC)
   return pixelCoords;
 }
 
-function getUserUnderPointer(pointer)
+function getNodeUnderPointer(pointer)
 {
   var pointerNDC = new THREE.Vector3(pointer.x, pointer.y, 1);
   projector.unprojectVector(pointerNDC, camera);
@@ -413,8 +392,8 @@ function getUserUnderPointer(pointer)
   var intersected = raycaster.intersectObjects(scene.children);
 
   for (var i = 0; i < intersected.length; ++i) {
-    if (intersected[i].object.user !== undefined) {
-      return User.get(intersected[i].object.user);
+    if (intersected[i].object.node !== undefined) {
+      return intersected[i].object.node;
     }
   }
 
@@ -434,40 +413,40 @@ function selectWithCurrentPointer()
 {
   // Safeguard in case we still have somebody grabbed
   releaseGrab();
-  var newSelectedUser = getUserUnderPointer(Input.currentPointer);
-  if (newSelectedUser !== null) {
-    select(newSelectedUser);
-    if (grabbingEnabled) grab(selectedUser);
+  var newSelectedNode = getNodeUnderPointer(Input.currentPointer);
+  if (newSelectedNode !== null) {
+    select(newSelectedNode);
+    if (grabbingEnabled) grab(selectedNode);
   }
 }
 
-function highlight(user)
+function highlight(node)
 {
-  highlightedUser = user;
-  user.highlight();
+  highlightedNode = node;
+  node.highlight();
 }
 
 function unhighlight()
 {
-  if (highlightedUser !== null) {
-    highlightedUser.unhighlight();
-    highlightedUser = null;
+  if (highlightedNode !== null) {
+    highlightedNode.unhighlight();
+    highlightedNode = null;
   }
 }
 
 var centreOfFocus = new THREE.Vector3();
 
-// Select the given user. We allow no deselection
+// Select the given node. We allow no deselection
 // without subsequent selection because we must
-// always have a user as the centre of focus.
-function select(user)
+// always have a node as the centre of focus.
+function select(node)
 {
-  if (selectedUser !== null) {
-    selectedUser.deselect();
-    var displacement = user.sphere.position.clone().sub(centreOfFocus);
+  if (selectedNode !== null) {
+    selectedNode.deselect();
+    var displacement = node.position.clone().sub(centreOfFocus);
 
 
-    setCoroutine({currentTime: 0, endTime: nodeSwitchingTime, target: user.sphere.position, displacement: new THREE.Vector3()},
+    setCoroutine({currentTime: 0, endTime: nodeSwitchingTime, target: node.position, displacement: new THREE.Vector3()},
                  function(o, deltaTime) {
                    function speedMultiplier(x) {
                      return 1 - nodeSwitchingCurveConstant*x*(x-o.endTime);
@@ -490,35 +469,27 @@ function select(user)
     );
   }
   else {
-    centreOfFocus.copy(user.sphere.position);
+    centreOfFocus.copy(node.position);
     camera.lookAt(centreOfFocus);
   }
 
-  selectedUser = user;
-  user.select();
+  selectedNode = node;
+  node.select();
+  node.showProfile();
 }
 
-function grab(user)
+function grab(node)
 {
-  grabbedUser = user;
-  user.grab();
+  grabbedNode = node;
+  node.grab();
 }
 
 function releaseGrab()
 {
-  if (grabbedUser !== null) {
-    grabbedUser.releaseGrab();
-    grabbedUser = null;
+  if (grabbedNode !== null) {
+    grabbedNode.releaseGrab();
+    grabbedNode = null;
   }
-}
-
-function orientTowardsCamera(mesh)
-{
-  mesh.quaternion.copy(camera.quaternion);
-  mesh.quaternion.x *= -1;
-  mesh.quaternion.y *= -1;
-  mesh.quaternion.z *= -1;
-  mesh.quaternion.w *= -1;
 }
 
 // Extra function for printing vectors when debugging
@@ -527,8 +498,8 @@ function printVector(v)
   console.log(v.x + ", " + v.y + ((typeof v.z !== "undefined")? (", " + v.z) : ""));
 }
 
-require(["Input", "User"], main);
-var Input, User;
+require(["Input", "UserNode"], main);
+var Input, Node;
 
 var requestAnimFrame = (function() {
   return  window.requestAnimationFrame ||
@@ -564,13 +535,11 @@ function nextUpdate()
     update(deltaTime);
 }
 
-function main(i, u) {
+function main(i, n) {
   Input = i;
-  User = u;
+  Node = n;
 
-  // Change the selected user to the user under the mouse and grab the user under the mouse
   Input.mouse.leftPressedCallback = selectWithCurrentPointer;
-
   Input.mouse.leftReleasedCallback = releaseGrab;
 
   initializeScene();
@@ -578,6 +547,8 @@ function main(i, u) {
   timeOfLastFrame = new Date().getTime();
   mainLoop();
 }
+
+
 
 
 
