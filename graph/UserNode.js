@@ -153,12 +153,16 @@ define(function() {
     this.numShownFollowers = followerCount;
     this.numShownFollowing = followingCount;
 
+    var appearingNodes = new Array();
+
     // Show the specified number of followers, creating their nodes if they do not exist
     for (var i = 0; i < this.numShownFollowers; ++i) {
       var username = this.profile.followers[i];
       var node = Node.get(username);
       if (!node)
         node = new Node(username);
+      if (node.showCount === 0)
+        appearingNodes.push(node);
       node.show();
     }
 
@@ -167,8 +171,80 @@ define(function() {
       var node = Node.get(username);
       if (!node)
         node = new Node(username);
+      if (node.showCount === 0)
+        appearingNodes.push(node);
       node.show();
     }
+
+    var n = appearingNodes.length;
+    var dlong = Math.PI*(3-Math.sqrt(5));  /* ~2.39996323 */
+    var dz = 2.0/n;
+    var long = 0;
+    var z = 1 - dz/2;
+    for (var k = 0; k < n; ++k) {
+      var r = Math.sqrt(1-z*z);
+      var pos = appearingNodes[k].position;
+      pos.copy(this.position);
+      pos.x += Math.cos(long)*r;
+      pos.y += Math.sin(long)*r;
+      pos.z += z;
+      z = z - dz;
+      long = long + dlong;
+    }
+
+    /*
+    function positionNode(node, position, r, theta, phi) {
+      node.position.copy(position);
+      var rs = r*Math.sin(theta);
+      var x, y, z;
+      node.position.x += x = rs*Math.cos(phi);
+      node.position.y += y = rs*Math.sin(phi);
+      node.position.z += z = rs*Math.cos(theta);
+      console.log(x + " " + y + " " + z);
+    }
+
+    var n = appearingNodes.length;
+
+    if (n > 0) {
+      var rLast = 0;
+      var phiLast = 0;
+
+      positionNode(appearingNodes[0], this.position, 0, Math.PI, 0);
+
+      if (n > 3) {
+        var p = 0.5;
+        var a = 1 - 2*p/(n-3);
+        var b = p*(n+1)/(n-3);
+
+        for (var k = 2; k < n; ++k) {
+          var kd = a*k + b;
+          var h = -1 + 2*(kd-1)/(n-1);
+          var r = Math.sqrt(1-h^2);
+          var theta = Math.acos(h);
+          var phi = phiLast + 3.6/Math.sqrt(n)*2/(rLast+r);
+          positionNode(appearingNodes[k-1], this.position, r, theta, phi);
+          rLast = r;
+          phiLast = phi;
+        }
+
+        positionNode(appearingNodes[n-1], this.position, Math.sqrt(1-(-1 + 2*((a*n + b)-1)/(n-1))^2), 0, 0);
+      }
+      else {
+        for (var k = 2; k < n; ++k) {
+          var h = -1 + 2*(k-1)/(n-1);
+          var r = Math.sqrt(1-h^2);
+          var theta = Math.acos(h);
+          var phi = phiLast + 3.6/Math.sqrt(n)*2/(rLast+r);
+          positionNode(appearingNodes[k-1], this.position, r, theta, phi);
+          rLast = r;
+          phiLast = phi;
+        }
+
+        if (n > 1)
+          positionNode(appearingNodes[n-1], this.position, 0, 0, 0);
+      }
+    }
+    */
 
     this.constructEdges();
 
