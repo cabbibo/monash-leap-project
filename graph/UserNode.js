@@ -2,6 +2,18 @@
 
 define(function() {
 
+  var localFetch = false;
+
+  if (localFetch) {
+    var fetchByIDUrl = "";
+    var fetchByScreenNameUrl = "";
+  }
+  else {
+    var fetchByIDUrl = "http://fit-stu15-v01.infotech.monash.edu.au/~tjon14/fetch-user-only.php?id=";
+    var fetchByScreenNameUrl = "http://fit-stu15-v01.infotech.monash.edu.au/~tjon14/fetch-user-only.php?screen_name=";
+  }
+
+  /*
   function Profile(picUrl, followers, following) {
     if (picUrl)
       this.picUrl = picUrl;
@@ -31,9 +43,54 @@ define(function() {
   testProfiles.johncarmack = new Profile(null, ["nick", "heath", "jonathonblow", "branislav", "davidrosen", "palmerluckey"], ["jonathonblow"]);
   testProfiles.jonathonblow = new Profile(null, ["nick", "davidrosen", "jenovachen", "davidrosen"], ["johncarmack"]);
   testProfiles.branislav = new Profile(null, ["nick", "fred", "george"], ["johncarmack"]);
-  function loadProfile(username) {
-    return testProfiles[username];
+  */
+
+  function fetchProfileByID(id, profileFetched) {
+    $.get(fetchByIDUrl + id, function(data) {
+      if (data === null) {
+        profileFetched(null);
+      }
+      else {
+        var user = JSON.parse(data);
+        var profile = JSON.parse(user.profile);
+        profile.followers = user.followers;
+        profile.following = user.friends;
+        profileFetched(profile);
+      }
+    });
   }
+
+  function fetchProfileByScreenName(screenName, profileFetched) {
+    $.get(fetchByScreenNameUrl + screenName, function(data) {
+      if (data === null) {
+        profileFetched(null);
+      }
+      else {
+        var user = JSON.parse(data);
+        var profile = JSON.parse(user.profile);
+        profile.followers = user.followers;
+        profile.following = user.friends;
+        profileFetched(profile);
+      }
+    });
+  }
+
+  Node.newNodeLoadedFromScreenName = function(screenName, profileLoaded) {
+    var profile = fetchProfileByScreenName(screenName, function(profile) {
+      if (profile) {
+        var node = new Node(profile.id);
+        node.profile = profile;
+        node.setToProfileLoadedState();
+        profileLoaded(node);
+      }
+      else {
+        console.log("Failed to load profile for user with screen name '" + screenName + "'.");
+        profileLoaded(null);
+      }
+    });
+  }
+
+  Node.newNodes = new Array();
 
   // Graph physics variables
   var springRestLength = 10;
@@ -62,11 +119,15 @@ define(function() {
   var followerColor = 0x5555FF;
   var followeeColor = 0xFF2222;
 
-  function Node(username) {
-    if (Node.nodes[username] !== undefined) return false;
-    Node.nodes[username] = this;
+  // Limits to the number of followers/following shown per node
+  var followersPerNodeShownCap = 20;
+  var followingPerNodeShownCap = 20;
 
-    this.username = username;
+  function Node(id) {
+    if (Node.nodes[id] !== undefined) return false;
+    Node.nodes[id] = this;
+
+    this.id = id;
 
     this.profile = null;
     this.profileLoaded = false;
@@ -84,7 +145,7 @@ define(function() {
     this.mesh.add(this.displayPicMesh);
     this.displayPicMesh.visible = false;
 
-    this.textBubble = new TextBubble(this.username);
+    this.textBubble = new TextBubble(this.id);
     this.displayPicMesh.add(this.textBubble.mesh);
     this.textBubble.mesh.position.set(0, textBubbleVerticalDisplacement, 0);
     this.textBubble.mesh.visible = false;
@@ -106,178 +167,165 @@ define(function() {
   Node.nodes = {};
   Node.shownNodes = {};
 
-  Node.get = function(username) {
-    return Node.nodes[username];
+  Node.get = function(id) {
+    return Node.nodes[id];
   }
 
   Node.prototype.show = function() {
     if (this.showCount++ === 0) {
       this.mesh.visible = true;
-      Node.shownNodes[this.username] = this;
+      Node.shownNodes[this.id] = this;
     }
   }
 
   Node.prototype.hide = function() {
     if (this.showCount === 1) {
       this.mesh.visible = false;
-      Node.shownNodes[this.username] = undefined;
+      Node.shownNodes[this.id] = undefined;
     }
 
      if (this.showCount > 0)
        --this.showCount;
   }
 
+  Node.prototype.setToProfileLoadedState = function() {
+    this.mesh.scale.set(2, 2, 2);
+    this.displayPicMesh.visible = true;
+    this.textBubble.text = this.profile.screen_name;
+    this.profileLoaded = true;
+  }
+
   Node.prototype.showProfile = function(followerCount, followingCount) {
     if (this.profileIsShown) return;
     this.show();
 
-    if (!this.profileLoaded) {
-      this.profile = loadProfile(this.username);
-      if (this.profile) {
-        this.mesh.scale.set(2, 2, 2);
-        this.displayPicMesh.visible = true;
-        this.profileLoaded = true;
+    // We classify it as shown even if the profile needs to be fetched first
+
+
+    if (this.profileLoaded) {
+      showProfileNow.call(this); // Show the profile immediately
+    }
+    else {
+      // Fetch the profile and then show it
+      this.willBeShown = true;
+      var me = this;
+      fetchProfileByID(this.id, function(profile) {
+        if (profile) {
+          me.profile = profile;
+          me.setToProfileLoadedState();
+          // Before showing the profile, ensure that something didn't request the profile to be hidden again in the meantime
+          if (me.willBeShown) {
+            showProfileNow.call(me);
+            me.willBeShown = false;
+          }
+        }
+        else {
+          console.log("Failed to load profile for user with ID " + me.id + ".");
+        }
+      });
+    }
+
+    function showProfileNow() {
+      if (followersPerNodeShownCap > 0) {
+        if (!(followerCount >= 0) || followerCount > followersPerNodeShownCap)
+          followerCount = followersPerNodeShownCap;
       }
       else {
-        console.log("Failed to load profile for user '" + this.username + "'.");
-        this.profileIsShown = true; // 'shown' per se, but not loaded
-        return;
+        if (!(followerCount >= 0) || followerCount > this.profile.followers.length)
+          followerCount = this.profile.followers.length;
       }
-    }
 
-    if (!(followerCount >= 0) || followerCount > this.profile.followers.length)
-      followerCount = this.profile.followers.length;
-    if (!(followingCount >= 0) || followingCount > this.profile.following.length)
-      followingCount = this.profile.following.length;
-
-    this.numShownFollowers = followerCount;
-    this.numShownFollowing = followingCount;
-
-    var appearingNodes = new Array();
-
-    // Show the specified number of followers, creating their nodes if they do not exist
-    for (var i = 0; i < this.numShownFollowers; ++i) {
-      var username = this.profile.followers[i];
-      var node = Node.get(username);
-      if (!node)
-        node = new Node(username);
-      if (node.showCount === 0)
-        appearingNodes.push(node);
-      node.show();
-    }
-
-    for (var i = 0; i < this.numShownFollowing; ++i) {
-      var username = this.profile.following[i];
-      var node = Node.get(username);
-      if (!node)
-        node = new Node(username);
-      if (node.showCount === 0)
-        appearingNodes.push(node);
-      node.show();
-    }
-
-    var n = appearingNodes.length;
-    var dlong = Math.PI*(3-Math.sqrt(5));  /* ~2.39996323 */
-    var dz = 2.0/n;
-    var long = 0;
-    var z = 1 - dz/2;
-    for (var k = 0; k < n; ++k) {
-      var r = Math.sqrt(1-z*z);
-      var pos = appearingNodes[k].position;
-      pos.copy(this.position);
-      pos.x += Math.cos(long)*r;
-      pos.y += Math.sin(long)*r;
-      pos.z += z;
-      z = z - dz;
-      long = long + dlong;
-    }
-
-    /*
-    function positionNode(node, position, r, theta, phi) {
-      node.position.copy(position);
-      var rs = r*Math.sin(theta);
-      var x, y, z;
-      node.position.x += x = rs*Math.cos(phi);
-      node.position.y += y = rs*Math.sin(phi);
-      node.position.z += z = rs*Math.cos(theta);
-      console.log(x + " " + y + " " + z);
-    }
-
-    var n = appearingNodes.length;
-
-    if (n > 0) {
-      var rLast = 0;
-      var phiLast = 0;
-
-      positionNode(appearingNodes[0], this.position, 0, Math.PI, 0);
-
-      if (n > 3) {
-        var p = 0.5;
-        var a = 1 - 2*p/(n-3);
-        var b = p*(n+1)/(n-3);
-
-        for (var k = 2; k < n; ++k) {
-          var kd = a*k + b;
-          var h = -1 + 2*(kd-1)/(n-1);
-          var r = Math.sqrt(1-h^2);
-          var theta = Math.acos(h);
-          var phi = phiLast + 3.6/Math.sqrt(n)*2/(rLast+r);
-          positionNode(appearingNodes[k-1], this.position, r, theta, phi);
-          rLast = r;
-          phiLast = phi;
-        }
-
-        positionNode(appearingNodes[n-1], this.position, Math.sqrt(1-(-1 + 2*((a*n + b)-1)/(n-1))^2), 0, 0);
+      if (followingPerNodeShownCap > 0) {
+        if (!(followingCount >= 0) || followingCount > followingPerNodeShownCap)
+          followingCount = followingPerNodeShownCap;
       }
       else {
-        for (var k = 2; k < n; ++k) {
-          var h = -1 + 2*(k-1)/(n-1);
-          var r = Math.sqrt(1-h^2);
-          var theta = Math.acos(h);
-          var phi = phiLast + 3.6/Math.sqrt(n)*2/(rLast+r);
-          positionNode(appearingNodes[k-1], this.position, r, theta, phi);
-          rLast = r;
-          phiLast = phi;
-        }
-
-        if (n > 1)
-          positionNode(appearingNodes[n-1], this.position, 0, 0, 0);
+        if (!(followingCount >= 0) || followingCount > this.profile.following.length)
+          followingCount = this.profile.following.length;
       }
+
+      this.numShownFollowers = followerCount;
+      this.numShownFollowing = followingCount;
+
+      var appearingNodes = new Array();
+
+      // Show the specified number of followers, creating their nodes if they do not exist
+      for (var i = 0; i < this.numShownFollowers; ++i) {
+        var id = this.profile.followers[i];
+        var node = Node.get(id);
+        if (!node)
+          node = new Node(id);
+        if (node.showCount === 0)
+          appearingNodes.push(node);
+        node.show();
+      }
+
+      for (var i = 0; i < this.numShownFollowing; ++i) {
+        var id = this.profile.following[i];
+        var node = Node.get(id);
+        if (!node)
+          node = new Node(id);
+        if (node.showCount === 0)
+          appearingNodes.push(node);
+        node.show();
+      }
+
+      var n = appearingNodes.length;
+      var dlong = Math.PI*(3-Math.sqrt(5));
+      var dz = 2.0/n;
+      var long = 0;
+      var z = 1 - dz/2;
+      for (var k = 0; k < n; ++k) {
+        var r = Math.sqrt(1-z*z);
+        var pos = appearingNodes[k].position;
+        pos.copy(this.position);
+        pos.x += Math.cos(long)*r;
+        pos.y += Math.sin(long)*r;
+        pos.z += z;
+        z = z - dz;
+        long = long + dlong;
+      }
+
+      this.constructEdges();
+
+      // Show the edges
+      for (var i = 0; i < this.numShownFollowers; ++i)
+        this.edgesToFollowers[i].show();
+
+      for (var i = 0; i < this.numShownFollowing; ++i)
+        this.edgesToFollowing[i].show();
+
+      this.profileIsShown = true;
     }
-    */
-
-    this.constructEdges();
-
-    // Show the edges
-    for (var i = 0; i < this.numShownFollowers; ++i)
-      this.edgesToFollowers[i].show();
-
-    for (var i = 0; i < this.numShownFollowing; ++i)
-      this.edgesToFollowing[i].show();
-
-    this.profileIsShown = true;
   }
 
   Node.prototype.hideProfile = function() {
     if (!this.profileIsShown) return;
-    this.hide();
 
-    // Hide all the shown followers
-    for (var i = 0; i < this.numShownFollowers; ++i)
-      Node.get(this.profile.followers[i]).hide();
+    if (this.willBeShown) {
+      // Cancel a show request that is yet to be fulfilled
+      this.willBeShown = false;
+    }
+    else {
+      this.hide();
 
-    for (var i = 0; i < this.numShownFollowing; ++i)
-      Node.get(this.profile.following[i]).hide();
+      // Hide all the shown followers
+      for (var i = 0; i < this.numShownFollowers; ++i)
+        Node.get(this.profile.followers[i]).hide();
 
-    for (var i = 0; i < this.numShownFollowers; ++i)
-      this.edgesToFollowers[i].hide();
+      for (var i = 0; i < this.numShownFollowing; ++i)
+        Node.get(this.profile.following[i]).hide();
 
-    for (var i = 0; i < this.numShownFollowing; ++i)
-      this.edgesToFollowing[i].hide();
+      for (var i = 0; i < this.numShownFollowers; ++i)
+        this.edgesToFollowers[i].hide();
 
-    this.numShownFollowers = 0;
-    this.numShownFollowing = 0;
-    this.profileIsShown = false;
+      for (var i = 0; i < this.numShownFollowing; ++i)
+        this.edgesToFollowing[i].hide();
+
+      this.numShownFollowers = 0;
+      this.numShownFollowing = 0;
+      this.profileIsShown = false;
+    }
   }
 
   Node.prototype.constructEdges = function() {
@@ -300,7 +348,7 @@ define(function() {
         // If the follower node already has a following edge connected to us, keep the existing edge
         var theirFollowing = followerNode.profile.following;
         for (var j = 0; j < followerNode.followingEdgesConstructed; ++j) {
-          if (theirFollowing[j] === this.username) {
+          if (theirFollowing[j] === this.id) {
             this.edgesToFollowers[i] = followerNode.edgesToFollowing[j];
             continue NEXT_FOLLOWER;
           }
@@ -310,7 +358,7 @@ define(function() {
         // to reflect that they are also following us
         var theirFollowers = followerNode.profile.followers;
         for (var j = 0; j < followerNode.followerEdgesConstructed; ++j) {
-          if (theirFollowers[j] === this.username) {
+          if (theirFollowers[j] === this.id) {
             this.edgesToFollowers[i] = followerNode.edgesToFollowers[j];
             this.edgesToFollowers[i].doubleFollower();
             continue NEXT_FOLLOWER;
@@ -339,7 +387,7 @@ define(function() {
         // If the following node already has a follower edge connected to us, keep the existing edge
         var theirFollowers = followingNode.profile.followers;
         for (var j = 0; j < followingNode.followerEdgesConstructed; ++j) {
-          if (theirFollowers[j] === this.username) {
+          if (theirFollowers[j] === this.id) {
             this.edgesToFollowing[i] = followingNode.edgesToFollowers[j];
             continue NEXT_FOLLOWING;
           }
@@ -348,7 +396,7 @@ define(function() {
         // to reflect that we are also following them
         var theirFollowing = followingNode.profile.following;
         for (var j = 0; j < followingNode.followingEdgesConstructed; ++j) {
-          if (theirFollowing[j] === this.username) {
+          if (theirFollowing[j] === this.id) {
             this.edgesToFollowing[i] = followingNode.edgesToFollowing[j];
             this.edgesToFollowing[i].doubleFollower();
             continue NEXT_FOLLOWING;
@@ -367,15 +415,15 @@ define(function() {
       for (var i = 0; i < this.numShownFollowers; ++i) {
         var follower = Node.get(this.profile.followers[i]);
         // If the springForces haven't already been added by the other node
-        if (!this.springForces[follower.username]) {
+        if (!this.springForces[follower.id]) {
           var displacement = (new THREE.Vector3()).subVectors(follower.position, this.position);
           var length = displacement.length();
           if (length > 0) {
             var accel = displacement.multiplyScalar(springK*(length-springRestLength)/length);
             if (!this.pinned)
-              this.springForces[follower.username] = accel;
+              this.springForces[follower.id] = accel;
             if (!follower.pinned)
-              follower.springForces[this.username] = accel.clone().multiplyScalar(-1);
+              follower.springForces[this.id] = accel.clone().multiplyScalar(-1);
           }
         }
       }
@@ -383,15 +431,15 @@ define(function() {
       for (var i = 0; i < this.numShownFollowing; ++i) {
         var following = Node.get(this.profile.following[i]);
         // If the springForces haven't already been added by the other node
-        if (!this.springForces[following.username]) {
+        if (!this.springForces[following.id]) {
           var displacement = (new THREE.Vector3()).subVectors(following.position, this.position);
           var length = displacement.length();
           if (length > 0) {
             var accel = displacement.multiplyScalar(springK*(length-springRestLength)/length);
             if (!this.pinned)
-              this.springForces[following.username] = accel;
+              this.springForces[following.id] = accel;
             if (!following.pinned)
-              following.springForces[this.username] = accel.clone().multiplyScalar(-1);
+              following.springForces[this.id] = accel.clone().multiplyScalar(-1);
           }
         }
       }
@@ -399,8 +447,8 @@ define(function() {
 
     if (!this.pinned) {
       // Add forces from node proximity
-      for (var username in Node.shownNodes) {
-        var node = Node.get(username);
+      for (var id in Node.shownNodes) {
+        var node = Node.get(id);
         if (node !== this) {
           var displacement = (new THREE.Vector3()).subVectors(node.position, this.position);
           var length = displacement.length();
@@ -444,8 +492,8 @@ define(function() {
     // We don't move selected nodes. They become the centre of focus.
     if (!this.selected) {
       // Add spring forces
-      for (var username in this.springForces)
-        this.accel.add(this.springForces[username]);
+      for (var id in this.springForces)
+        this.accel.add(this.springForces[id]);
       // Add drag force
       this.accel.sub(this.velocity.clone().multiplyScalar(dragConstant*this.velocity.length()));
       // Update velocity
@@ -601,4 +649,5 @@ define(function() {
 
   return Node;
 });
+
 

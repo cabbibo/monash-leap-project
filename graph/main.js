@@ -68,7 +68,7 @@ function initializeScene()
   var canvasWidth = window.innerWidth;
   var canvasHeight = window.innerHeight;
 
-  renderer = new THREE.WebGLRenderer({clearColor: 0x000000, alpha: false, antialias: true});
+  renderer = new THREE.WebGLRenderer({setClearColor: 0x000000, alpha: false, antialias: true});
 
   if (usingRift)
     riftRenderer = new THREE.OculusRiftEffect(renderer);
@@ -100,9 +100,13 @@ function initializeScene()
 
 function buildGraph()
 {
-  var nick = new Node("nick");
-  nick.show();
-  select(nick);
+  Node.newNodeLoadedFromScreenName("PootPooter", function(node) {
+    if (node) {
+      node.show();
+      select(node);
+    }
+    else console.log("Failed to load starting user!");
+  });
 }
 
 var lastMouseX = 0, lastMouseY = 0;
@@ -131,6 +135,7 @@ function update(deltaTime)
 {
   Input.update();
 
+  // Execute coroutines
   for (var i = 0; i < coroutines.length;) {
     if (coroutines[i].func(coroutines[i], deltaTime))
       coroutines.splice(i, 1);
@@ -547,6 +552,7 @@ function main(i, n) {
   timeOfLastFrame = new Date().getTime();
   mainLoop();
 }
+
 
 
 

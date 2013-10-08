@@ -14,10 +14,6 @@ define(function() {
   // Leap controller variables
   Input.leap = new Leap.Controller();
 
-  Input.leap.on('connect', function() {
-    console.log("Leap Motion successfully connected.");
-  });
-
   Input.leap.on('deviceConnected', function() {
     console.log("The Leap device has been connected.");
   });
@@ -135,6 +131,7 @@ define(function() {
 
   return Input;
 });
+
 
 
 
