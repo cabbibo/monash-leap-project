@@ -13,45 +13,13 @@ define(function() {
     var fetchByScreenNameUrl = "http://fit-stu15-v01.infotech.monash.edu.au/~tjon14/fetch-user-only.php?screen_name=";
   }
 
-  /*
-  function Profile(picUrl, followers, following) {
-    if (picUrl)
-      this.picUrl = picUrl;
-    else
-      this.picUrl = "defaultProfilePic.png";
-    this.followers = new Array();
-    this.following = new Array();
-    this.newFollowers = 0;
-    this.newFollowing = 0;
-    if (followers)
-      this.addFollowers(followers);
-    if (following)
-      this.addFollowing(following);
-  }
-
-  Profile.prototype.addFollowers = function(followers) {
-    this.followers = this.followers.concat(followers);
-  }
-
-  Profile.prototype.addFollowing = function(following) {
-    this.following = this.following.concat(following);
-  }
-
-  var testProfiles = {};
-  testProfiles.nick = new Profile(null, ["matt", "jordan", "michael"], ["obama", "elonmusk", "johncarmack", "jonathonblow", "branislav"]);
-  testProfiles.obama = new Profile(null, ["elonmusk", "nick", "tyson", "kevinrudd", "jordan", "sam", "dilpreet", "tom", "harry", "frank"]);
-  testProfiles.johncarmack = new Profile(null, ["nick", "heath", "jonathonblow", "branislav", "davidrosen", "palmerluckey"], ["jonathonblow"]);
-  testProfiles.jonathonblow = new Profile(null, ["nick", "davidrosen", "jenovachen", "davidrosen"], ["johncarmack"]);
-  testProfiles.branislav = new Profile(null, ["nick", "fred", "george"], ["johncarmack"]);
-  */
-
   function fetchProfileByID(id, profileFetched) {
     $.get(fetchByIDUrl + id, function(data) {
-      if (data === null) {
+      var user = JSON.parse(data);
+      if (user === null) {
         profileFetched(null);
       }
       else {
-        var user = JSON.parse(data);
         var profile = JSON.parse(user.profile);
         profile.followers = user.followers;
         profile.following = user.friends;
@@ -62,11 +30,11 @@ define(function() {
 
   function fetchProfileByScreenName(screenName, profileFetched) {
     $.get(fetchByScreenNameUrl + screenName, function(data) {
-      if (data === null) {
+      var user = JSON.parse(data);
+      if (user === null) {
         profileFetched(null);
       }
       else {
-        var user = JSON.parse(data);
         var profile = JSON.parse(user.profile);
         profile.followers = user.followers;
         profile.following = user.friends;
@@ -80,7 +48,8 @@ define(function() {
       if (profile) {
         var node = new Node(profile.id);
         node.profile = profile;
-        node.setToProfileLoadedState();
+        node.profileLoaded = true;
+        node.setToShowProfileAppearance();
         profileLoaded(node);
       }
       else {
@@ -113,8 +82,7 @@ define(function() {
   var selectedNodeMatU = new THREE.MeshLambertMaterial({color: 0x77FF77});
   var highlightedNodeMatL = new THREE.MeshLambertMaterial({color: 0xFF8800, opacity: 0.3, transparent: true});
   var selectedNodeMatL = new THREE.MeshLambertMaterial({color: 0x77FF77, opacity: 0.3, transparent: true});
-  var displayPicTexture = THREE.ImageUtils.loadTexture("defaultProfilePic.png");
-  var displayPicMaterial = new THREE.MeshBasicMaterial({map: displayPicTexture});
+  var defaultDisplayPicTexture = THREE.ImageUtils.loadTexture("defaultProfilePic.png");
 
   var followerColor = 0x5555FF;
   var followeeColor = 0xFF2222;
@@ -131,17 +99,18 @@ define(function() {
 
     this.profile = null;
     this.profileLoaded = false;
-    this.profileIsShown = false;
-    this.showCount = 0;
+    this.showNodeCount = 0;
+    this.showProfileCount = 0;
     this.highlighted = false;
     this.selected = false;
     this.grabbed = false;
+    this.expanded = false;
 
     this.mesh = new THREE.Mesh(nodeGeometry, nodeMatU);
-    scene.add(this.mesh);
+    this.meshInScene = false;
     this.mesh.node = this;
-    this.mesh.visible = false;
-    this.displayPicMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.65, 0.65, 1, 1), displayPicMaterial);
+    this.displayPicMaterial = new THREE.MeshBasicMaterial({map: defaultDisplayPicTexture});
+    this.displayPicMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.65, 0.65, 1, 1), this.displayPicMaterial);
     this.mesh.add(this.displayPicMesh);
     this.displayPicMesh.visible = false;
 
@@ -152,8 +121,10 @@ define(function() {
 
     this.edgesToFollowers = new Array();
     this.edgesToFollowing = new Array();
-    this.numShownFollowers = 0;
-    this.numShownFollowing = 0;
+    this.numShownFollowerNodes = 0;
+    this.numShownFollowingNodes = 0;
+    this.numShownFollowerProfiles = 0;
+    this.numShownFollowingProfiles = 0;
     this.followerEdgesConstructed = 0;
     this.followingEdgesConstructed = 0;
 
@@ -171,168 +142,250 @@ define(function() {
     return Node.nodes[id];
   }
 
-  Node.prototype.show = function() {
-    if (this.showCount++ === 0) {
-      this.mesh.visible = true;
+  // We don't want to see the node unless more than one show call has been made
+  // A second show call will be made if a second node is interested in this node
+  // or if the node's profile has been asked to be shown
+  Node.prototype.showNode = function() {
+    ++this.showNodeCount;
+    if (this.showNodeCount === 2) {
+      scene.add(this.mesh);
+      this.meshInScene = true;
       Node.shownNodes[this.id] = this;
     }
   }
 
-  Node.prototype.hide = function() {
-    if (this.showCount === 1) {
-      this.mesh.visible = false;
+  Node.prototype.hideNode = function() {
+    if (this.showNodeCount === 0) return;
+    if (--this.showNodeCount === 1) {
+      scene.remove(this.mesh);
+      this.meshInScene = false;
       Node.shownNodes[this.id] = undefined;
     }
-
-     if (this.showCount > 0)
-       --this.showCount;
   }
 
-  Node.prototype.setToProfileLoadedState = function() {
+  Node.prototype.setToShowProfileAppearance = function() {
     this.mesh.scale.set(2, 2, 2);
+    /* CROSS-ORIGIN ISSUES
+    if (this.profile.profile_image_url) {
+      this.displayPicMaterial.map = THREE.ImageUtils.loadTexture(this.profile.profile_image_url);
+      this.displayPicMaterial.needsUpdate = true;
+    }
+    */
     this.displayPicMesh.visible = true;
-    this.textBubble.text = this.profile.screen_name;
-    this.profileLoaded = true;
+    this.textBubble.redraw(this.profile.screen_name);
+  }
+
+  Node.prototype.setToHideProfileAppearance = function() {
+    this.mesh.scale.set(1, 1, 1);
+    this.displayPicMesh.visible = false;
   }
 
   Node.prototype.showProfile = function(followerCount, followingCount) {
-    if (this.profileIsShown) return;
-    this.show();
+    ++this.showProfileCount;
+    if (this.showProfileCount === 1) {
 
-    // We classify it as shown even if the profile needs to be fetched first
-
-
-    if (this.profileLoaded) {
-      showProfileNow.call(this); // Show the profile immediately
-    }
-    else {
-      // Fetch the profile and then show it
-      this.willBeShown = true;
-      var me = this;
-      fetchProfileByID(this.id, function(profile) {
-        if (profile) {
-          me.profile = profile;
-          me.setToProfileLoadedState();
-          // Before showing the profile, ensure that something didn't request the profile to be hidden again in the meantime
-          if (me.willBeShown) {
-            showProfileNow.call(me);
-            me.willBeShown = false;
+      if (this.profileLoaded) {
+        this.showNode(); // Guarantee a second show so the node is visible
+        showNeighbours.call(this, followerCount, followingCount);
+      }
+      else {
+        // Fetch the profile and then show it
+        this.willBeShown = true;
+        var me = this;
+        fetchProfileByID(this.id, function(profile) {
+          if (profile) {
+            me.showNode(); // Guarantee a second show so the node is visible
+            me.profile = profile;
+            me.profileLoaded = true;
+            // Before showing the profile, ensure that something didn't request the profile to be hidden again in the meantime
+            if (me.willBeShown) {
+              me.setToShowProfileAppearance();
+              showNeighbours.call(me, followerCount, followingCount);
+              me.willBeShown = false;
+            }
           }
-        }
-        else {
-          console.log("Failed to load profile for user with ID " + me.id + ".");
-        }
-      });
-    }
-
-    function showProfileNow() {
-      if (followersPerNodeShownCap > 0) {
-        if (!(followerCount >= 0) || followerCount > followersPerNodeShownCap)
-          followerCount = followersPerNodeShownCap;
+          else {
+            console.log("Failed to load profile for user with ID " + me.id + ".");
+          }
+        });
       }
-      else {
-        if (!(followerCount >= 0) || followerCount > this.profile.followers.length)
-          followerCount = this.profile.followers.length;
-      }
-
-      if (followingPerNodeShownCap > 0) {
-        if (!(followingCount >= 0) || followingCount > followingPerNodeShownCap)
-          followingCount = followingPerNodeShownCap;
-      }
-      else {
-        if (!(followingCount >= 0) || followingCount > this.profile.following.length)
-          followingCount = this.profile.following.length;
-      }
-
-      this.numShownFollowers = followerCount;
-      this.numShownFollowing = followingCount;
-
-      var appearingNodes = new Array();
-
-      // Show the specified number of followers, creating their nodes if they do not exist
-      for (var i = 0; i < this.numShownFollowers; ++i) {
-        var id = this.profile.followers[i];
-        var node = Node.get(id);
-        if (!node)
-          node = new Node(id);
-        if (node.showCount === 0)
-          appearingNodes.push(node);
-        node.show();
-      }
-
-      for (var i = 0; i < this.numShownFollowing; ++i) {
-        var id = this.profile.following[i];
-        var node = Node.get(id);
-        if (!node)
-          node = new Node(id);
-        if (node.showCount === 0)
-          appearingNodes.push(node);
-        node.show();
-      }
-
-      var n = appearingNodes.length;
-      var dlong = Math.PI*(3-Math.sqrt(5));
-      var dz = 2.0/n;
-      var long = 0;
-      var z = 1 - dz/2;
-      for (var k = 0; k < n; ++k) {
-        var r = Math.sqrt(1-z*z);
-        var pos = appearingNodes[k].position;
-        pos.copy(this.position);
-        pos.x += Math.cos(long)*r;
-        pos.y += Math.sin(long)*r;
-        pos.z += z;
-        z = z - dz;
-        long = long + dlong;
-      }
-
-      this.constructEdges();
-
-      // Show the edges
-      for (var i = 0; i < this.numShownFollowers; ++i)
-        this.edgesToFollowers[i].show();
-
-      for (var i = 0; i < this.numShownFollowing; ++i)
-        this.edgesToFollowing[i].show();
-
-      this.profileIsShown = true;
     }
   }
 
   Node.prototype.hideProfile = function() {
-    if (!this.profileIsShown) return;
-
-    if (this.willBeShown) {
-      // Cancel a show request that is yet to be fulfilled
-      this.willBeShown = false;
-    }
-    else {
-      this.hide();
-
-      // Hide all the shown followers
-      for (var i = 0; i < this.numShownFollowers; ++i)
-        Node.get(this.profile.followers[i]).hide();
-
-      for (var i = 0; i < this.numShownFollowing; ++i)
-        Node.get(this.profile.following[i]).hide();
-
-      for (var i = 0; i < this.numShownFollowers; ++i)
-        this.edgesToFollowers[i].hide();
-
-      for (var i = 0; i < this.numShownFollowing; ++i)
-        this.edgesToFollowing[i].hide();
-
-      this.numShownFollowers = 0;
-      this.numShownFollowing = 0;
-      this.profileIsShown = false;
+    if (this.showProfileCount === 0) return;
+    this.hideNode();
+    if (--this.showProfileCount === 0) {
+      if (this.willBeShown) {
+        // Cancel a show request that is yet to be fulfilled
+        this.willBeShown = false;
+      }
+      else {
+        this.setToHideProfileAppearance();
+        hideNeighbours.call(this);
+      }
     }
   }
 
-  Node.prototype.constructEdges = function() {
+  // The next two methods are not added to the prototype to ensure we never try to call
+  // them from outside this module. They should be private.
+
+  function showNeighbours(followerCount, followingCount) {
+    if (followersPerNodeShownCap > 0 && followersPerNodeShownCap < this.profile.followers.length) {
+      if (!(followerCount >= 0) || followerCount > followersPerNodeShownCap)
+        followerCount = followersPerNodeShownCap;
+    }
+    else {
+      if (!(followerCount >= 0) || followerCount > this.profile.followers.length)
+        followerCount = this.profile.followers.length;
+    }
+
+    if (followingPerNodeShownCap > 0 && followingPerNodeShownCap < this.profile.following.length) {
+      if (!(followingCount >= 0) || followingCount > followingPerNodeShownCap)
+        followingCount = followingPerNodeShownCap;
+    }
+    else {
+      if (!(followingCount >= 0) || followingCount > this.profile.following.length)
+        followingCount = this.profile.following.length;
+    }
+
+    var appearingNodes = new Array();
+
+    // Show the specified number of followers if they are not already shown, creating their nodes if they do not exist
+    for (var i = this.numShownFollowerNodes; i < followerCount; ++i) {
+      var id = this.profile.followers[i];
+      var node = Node.get(id);
+      if (!node)
+        node = new Node(id);
+      node.showNode();
+      // If node is now visible
+      if (node.showNodeCount === 2)
+        appearingNodes.push(node);
+    }
+
+    for (var i = this.numShownFollowingNodes; i < followingCount; ++i) {
+      var id = this.profile.following[i];
+      var node = Node.get(id);
+      if (!node)
+        node = new Node(id);
+      node.showNode();
+      // If node is now visible
+      if (node.showNodeCount === 2)
+        appearingNodes.push(node);
+    }
+
+    // Space the new nodes to be shown around this node
+    var n = appearingNodes.length;
+    var dlong = Math.PI*(3-Math.sqrt(5));
+    var dz = 2.0/n;
+    var long = 0;
+    var z = 1 - dz/2;
+    for (var k = 0; k < n; ++k) {
+      var r = Math.sqrt(1-z*z);
+      var pos = appearingNodes[k].position;
+      pos.copy(this.position);
+      pos.x += Math.cos(long)*r;
+      pos.y += Math.sin(long)*r;
+      pos.z += z;
+      z = z - dz;
+      long = long + dlong;
+    }
+
+    this.constructEdges(followerCount, followingCount);
+
+    this.numShownFollowerNodes = followerCount;
+    this.numShownFollowingNodes = followingCount;
+    this.profileIsShown = true;
+  }
+
+  function hideNeighbours() {
+    for (var i = 0; i < this.numShownFollowerNodes; ++i)
+      Node.get(this.profile.followers[i]).hideNode();
+
+    for (var i = 0; i < this.numShownFollowingNodes; ++i)
+      Node.get(this.profile.following[i]).hideNode();
+
+    this.numShownFollowerNodes = 0;
+    this.numShownFollowingNodes = 0;
+  }
+
+  Node.prototype.showNeighbourProfiles = function(followerCount, followingCount) {
+    if (!this.profileLoaded || this.showProfileCount === 0) return;
+
+    if (followersPerNodeShownCap > 0 && followersPerNodeShownCap < this.profile.followers.length) {
+      if (!(followerCount >= 0) || followerCount > followersPerNodeShownCap)
+        followerCount = followersPerNodeShownCap;
+    }
+    else {
+      if (!(followerCount >= 0) || followerCount > this.profile.followers.length)
+        followerCount = this.profile.followers.length;
+    }
+
+    if (followingPerNodeShownCap > 0 && followingPerNodeShownCap < this.profile.following.length) {
+      if (!(followingCount >= 0) || followingCount > followingPerNodeShownCap)
+        followingCount = followingPerNodeShownCap;
+    }
+    else {
+      if (!(followingCount >= 0) || followingCount > this.profile.following.length)
+        followingCount = this.profile.following.length;
+    }
+
+    // Ensure that the nodes are shown regularly before we show their profiles
+    showNeighbours.call(this, followerCount, followingCount);
+
+    var appearingNodes = new Array();
+
+    // Show the specified number of followers, creating their nodes if they do not exist
+    for (var i = this.numShownFollowerProfiles; i < followerCount; ++i) {
+      var id = this.profile.followers[i];
+      var node = Node.get(id);
+      // Node is about to be shown
+      if (node.showNodeCount === 1) {
+        appearingNodes.push(node);
+      }
+      node.showProfile();
+    }
+
+    for (var i = this.numShownFollowingProfiles; i < followingCount; ++i) {
+      var id = this.profile.following[i];
+      var node = Node.get(id);
+      // Node is about to be shown
+      if (node.showNodeCount === 1) {
+        appearingNodes.push(node);
+      }
+      node.showProfile();
+    }
+
+    // Space the new nodes to be shown around this node
+    var n = appearingNodes.length;
+    var dlong = Math.PI*(3-Math.sqrt(5));
+    var dz = 2.0/n;
+    var long = 0;
+    var z = 1 - dz/2;
+    for (var k = 0; k < n; ++k) {
+      var r = Math.sqrt(1-z*z);
+      var pos = appearingNodes[k].position;
+      pos.copy(this.position);
+      pos.x += Math.cos(long)*r;
+      pos.y += Math.sin(long)*r;
+      pos.z += z;
+      z = z - dz;
+      long = long + dlong;
+    }
+
+    this.numShownFollowerProfiles = followerCount;
+    this.numShownFollowingProfiles = followingCount;
+  }
+
+  Node.prototype.hideNeighbourProfiles = function() {
+
+  }
+
+  Node.prototype.constructEdges = function(followerCount, followingCount) {
     var followers = this.profile.followers;
     var following = this.profile.following;
     // For all new shown follower nodes (where the edge isn't already constructed)
-    NEXT_FOLLOWER: for (var i = this.followerEdgesConstructed; i < this.numShownFollowers; ++i) {
+    NEXT_FOLLOWER: for (var i = this.followerEdgesConstructed; i < followerCount; ++i) {
       // If we already built the following edge, update the existing edge
       for (var j = 0; j < this.followingEdgesConstructed; ++j) {
         if (followers[i] === following[j]) {
@@ -368,10 +421,10 @@ define(function() {
       // Create a new edge and store it in the same index that the follower node is in
       this.edgesToFollowers[i] = new Edge(followerNode, this);
     }
-    this.followerEdgesConstructed = this.numShownFollowers;
+    this.followerEdgesConstructed = this.numShownFollowerNodes;
 
     // Repeat for new shown following node
-    NEXT_FOLLOWING: for (var i = this.followingEdgesConstructed; i < this.numShownFollowing; ++i) {
+    NEXT_FOLLOWING: for (var i = this.followingEdgesConstructed; i < followingCount; ++i) {
       // If we already built the follower edge, update the existing edge
       for (var j = 0; j < this.followerEdgesConstructed; ++j) {
         if (following[i] === followers[j]) {
@@ -406,13 +459,13 @@ define(function() {
       // Create a new edge and store it in the same index that the following node is in
       this.edgesToFollowing[i] = new Edge(this, followingNode);
     }
-    this.followingEdgesConstructed = this.numShownFollowing;
+    this.followingEdgesConstructed = this.numShownFollowingNodes;
   }
 
   Node.prototype.calculateForces = function() {
     if (this.profileLoaded) {
       // Add spring springForces between connected nodes
-      for (var i = 0; i < this.numShownFollowers; ++i) {
+      for (var i = 0; i < this.numShownFollowerNodes; ++i) {
         var follower = Node.get(this.profile.followers[i]);
         // If the springForces haven't already been added by the other node
         if (!this.springForces[follower.id]) {
@@ -428,7 +481,7 @@ define(function() {
         }
       }
 
-      for (var i = 0; i < this.numShownFollowing; ++i) {
+      for (var i = 0; i < this.numShownFollowingNodes; ++i) {
         var following = Node.get(this.profile.following[i]);
         // If the springForces haven't already been added by the other node
         if (!this.springForces[following.id]) {
@@ -478,13 +531,13 @@ define(function() {
     }
 
     if (this.selected) {
-      this.mesh.material = this.profileLoaded ? selectedNodeMatL : selectedNodeMatU;
+      this.mesh.material = this.showProfileCount ? selectedNodeMatL : selectedNodeMatU;
     }
     else if (this.highlighted) {
-      this.mesh.material = this.profileLoaded ? highlightedNodeMatL : highlightedNodeMatU;
+      this.mesh.material = this.showProfileCount ? highlightedNodeMatL : highlightedNodeMatU;
     }
     else {
-      this.mesh.material = this.profileLoaded ? nodeMatL : nodeMatU;
+      this.mesh.material = this.showProfileCount ? nodeMatL : nodeMatU;
     }
   }
 
@@ -521,9 +574,9 @@ define(function() {
     this.accel.set(0, 0, 0);
 
     // Update edges
-    for (var i = 0; i < this.numShownFollowers; ++i)
+    for (var i = 0; i < this.numShownFollowerNodes; ++i)
       this.edgesToFollowers[i].update();
-    for (var i = 0; i < this.numShownFollowing; ++i)
+    for (var i = 0; i < this.numShownFollowingNodes; ++i)
       this.edgesToFollowing[i].update();
   }
 
@@ -584,9 +637,7 @@ define(function() {
     this.lineGeo.colors.push(new THREE.Color(followerColor));
     this.lineGeo.colors.push(new THREE.Color(followeeColor));
     this.mesh = new THREE.Line(this.lineGeo, this.lineMaterial);
-    scene.add(this.mesh);
-    this.mesh.visible = false;
-    this.showCount = 0;
+    this.meshInScene = false;
   }
 
   Edge.prototype.lineMaterial = new THREE.LineBasicMaterial(
@@ -595,19 +646,18 @@ define(function() {
 
   Edge.prototype.update = function() {
     this.lineGeo.verticesNeedUpdate = true;
-  }
-
-  Edge.prototype.show = function() {
-    if (this.showCount++ === 0)
-      this.mesh.visible = true;
-  }
-
-  Edge.prototype.hide = function() {
-    if (this.showCount === 1)
-      this.mesh.visible = false;
-
-    if (this.showCount > 0)
-      --this.showCount;
+    if (this.meshInScene) {
+      if (!this.followerNode.meshInScene || !this.followeeNode.meshInScene) {
+        scene.remove(this.mesh);
+        this.meshInScene = false;
+      }
+    }
+    else {
+      if (this.followerNode.meshInScene && this.followeeNode.meshInScene) {
+        scene.add(this.mesh);
+        this.meshInScene = true;
+      }
+    }
   }
 
   Edge.prototype.doubleFollower = function() {
@@ -636,7 +686,9 @@ define(function() {
     this.text = text;
   }
 
-  TextBubble.prototype.redraw = function() {
+  TextBubble.prototype.redraw = function(text) {
+    if (text)
+      this.text = text;
     drawingCanvas.width = textWidth;
     drawingCanvas.height = textHeight;
     drawingContext.font = "Bold "+(textHeight-8)+"px Arial";
@@ -649,5 +701,7 @@ define(function() {
 
   return Node;
 });
+
+
 
 

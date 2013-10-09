@@ -102,7 +102,7 @@ function buildGraph()
 {
   Node.newNodeLoadedFromScreenName("PootPooter", function(node) {
     if (node) {
-      node.show();
+      node.showNode();
       select(node);
     }
     else console.log("Failed to load starting user!");
@@ -134,6 +134,16 @@ function setCoroutine(data, func)
 function update(deltaTime)
 {
   Input.update();
+
+  if (Input.keyboard.keyPressed['1'])
+    selectedNode.showNeighbourProfiles();
+
+  if (Input.keyboard.keyPressed['2'])
+    selectedNode.hideNeighbourProfiles();
+
+  if (Input.keyboard.keyPressed['7'])
+    for (var id in Node.nodes)
+      Node.get(id).showNode();
 
   // Execute coroutines
   for (var i = 0; i < coroutines.length;) {
@@ -301,11 +311,11 @@ function update(deltaTime)
   if (Input.keyboard.key['s'])
     dz = keyboardMoveSpeed*deltaTime;
 
-    var displacement = centreOfFocus.clone().sub(camera.position);
+  var displacement = centreOfFocus.clone().sub(camera.position);
   // Move the camera to the centroid
   camera.position.add(displacement);
 
-  // Rotate the camera
+  // Rotate/zoom the camera
   if (dx !== 0)
     camera.rotateOnAxis(new THREE.Vector3(0, 1, 0), dx);
   if (dy !== 0)
@@ -420,8 +430,14 @@ function selectWithCurrentPointer()
   releaseGrab();
   var newSelectedNode = getNodeUnderPointer(Input.currentPointer);
   if (newSelectedNode !== null) {
-    select(newSelectedNode);
-    if (grabbingEnabled) grab(selectedNode);
+    if (newSelectedNode.selected) {
+      newSelectedNode.DOSOMETHING
+    }
+    else {
+      select(newSelectedNode);
+      if (grabbingEnabled) grab(selectedNode);
+    }
+
   }
 }
 
@@ -552,6 +568,8 @@ function main(i, n) {
   timeOfLastFrame = new Date().getTime();
   mainLoop();
 }
+
+
 
 
 
