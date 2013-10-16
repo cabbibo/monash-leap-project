@@ -78,6 +78,7 @@ function initializeScene()
   document.getElementById("WebGLCanvas").appendChild(renderer.domElement);
 
   scene = new THREE.Scene();
+  scene.fog = new THREE.Fog(0x000000, 90, 100);
 
   camera = new THREE.PerspectiveCamera(45, canvasWidth / canvasHeight, nearClip, farClip);
   camera.position.set(0, 0, 30);
@@ -96,6 +97,13 @@ function initializeScene()
   // Create the canvas for drawing 2d graphics
   drawingCanvas = document.createElement('canvas');
   drawingContext = drawingCanvas.getContext('2d');
+}
+
+function zDistanceToCamera(position)
+{
+  var intoScreen = new THREE.Vector3(0, 0, 1);
+  projector.unprojectVector(intoScreen, camera);
+  return position.clone().sub(camera.position).dot(intoScreen)/intoScreen.length();
 }
 
 function buildGraph()
@@ -334,12 +342,13 @@ function update(deltaTime)
 
   // Apply net force for each node
   for (var username in Node.shownNodes) {
-    Node.shownNodes[username].updatePosition(deltaTime);
+    Node.shownNodes[username].updatePosition(deltaTime, camera);
   }
 
-  for (var username in Node.shownNodes) {
-    Node.shownNodes[username].orient(camera.quaternion);
-  }
+  // Set the fog distance
+  var distance = zDistanceToCamera(centreOfFocus);
+  scene.fog.near = distance*2;
+  scene.fog.far = distance*2.1 + 1;
 
   Input.reset();
 }
@@ -404,10 +413,10 @@ function getNodeUnderPointer(pointer)
   directionVector.normalize();
 
   var raycaster = new THREE.Raycaster(camera.position, directionVector, nearClip, farClip);
-  var intersected = raycaster.intersectObjects(scene.children);
+  var intersected = raycaster.intersectObjects(scene.children, true);
 
   for (var i = 0; i < intersected.length; ++i) {
-    if (intersected[i].object.node !== undefined) {
+    if (intersected[i].object.node) {
       return intersected[i].object.node;
     }
   }
@@ -578,3 +587,4 @@ function main(i, n) {
 
 
 
+

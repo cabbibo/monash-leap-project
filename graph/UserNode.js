@@ -2,15 +2,15 @@
 
 define(function() {
 
-  var localFetch = false;
+  var localFetch = true;
 
   if (localFetch) {
     var fetchByIDUrl = "";
     var fetchByScreenNameUrl = "";
   }
   else {
-    var fetchByIDUrl = "http://fit-stu15-v01.infotech.monash.edu.au/~tjon14/fetch-user-only.php?id=";
-    var fetchByScreenNameUrl = "http://fit-stu15-v01.infotech.monash.edu.au/~tjon14/fetch-user-only.php?screen_name=";
+    var fetchByIDUrl = "http://fit-stu15-v01.infotech.monash.edu.au/~tjon14/fetching/fetch-user-only.php?id=";
+    var fetchByScreenNameUrl = "http://fit-stu15-v01.infotech.monash.edu.au/~tjon14/fetching/fetch-user-only.php?screen_name=";
   }
 
   function fetchProfileByID(id, profileFetched) {
@@ -48,6 +48,7 @@ define(function() {
       if (profile) {
         var node = new Node(profile.id);
         node.profile = profile;
+        node.profileLoadAttempted = true;
         node.profileLoaded = true;
         node.setToShowProfileAppearance();
         profileLoaded(node);
@@ -64,40 +65,55 @@ define(function() {
   // Graph physics variables
   var springRestLength = 10;
   var springK = 10;
-  var repulsionStrength = 800;
+  var repulsionStrength = 2000;
   var dragConstant = 0.2;
   var pointerDragForce = 20;
   var maxPointerDragAccel = 8000;
   var stabilisingForce = 50; // Constant force applied to all nodes to stop slow movements
+  var maxForceMag = 500;
 
   // Variables for node models
   var sphereRadius = 0.5;
   var sphereSegments = 16;
   var sphereRings = 16;
 
-  var nodeGeometry = new THREE.SphereGeometry(sphereRadius, sphereSegments, sphereRings);
-  var nodeMatU = new THREE.MeshLambertMaterial({color: 0x888888});
-  var nodeMatL = new THREE.MeshLambertMaterial({color: 0xE0FFFF, opacity: 0.3, transparent: true});
-  var highlightedNodeMatU = new THREE.MeshLambertMaterial({color: 0xFF8800});
-  var selectedNodeMatU = new THREE.MeshLambertMaterial({color: 0x77FF77});
-  var highlightedNodeMatL = new THREE.MeshLambertMaterial({color: 0xFF8800, opacity: 0.3, transparent: true});
-  var selectedNodeMatL = new THREE.MeshLambertMaterial({color: 0x77FF77, opacity: 0.3, transparent: true});
+  var sphereGeometry = new THREE.SphereGeometry(sphereRadius, sphereSegments, sphereRings);
+  var dpScale = 0.82; // The size of the display pic with respect to the size of the border
+  var dpOutlineScale = 0.86;
+  var dpBorderScale = 0.96;
+  var dpGeometry = new THREE.PlaneGeometry(dpScale, dpScale, 1, 1);
+  var dpOutlineGeometry = new THREE.PlaneGeometry(dpOutlineScale, dpOutlineScale, 1, 1);
+  var dpBorderGeometry = new THREE.PlaneGeometry(dpBorderScale, dpBorderScale, 1, 1);
+  var dpBorderOutlineGeometry = new THREE.PlaneGeometry(1, 1, 1, 1);
+
+  var sphereMat = new THREE.MeshLambertMaterial({color: 0x888888});
+  var highlightedSphereMat = new THREE.MeshLambertMaterial({color: 0xFF8800});
+  var selectedSphereMat = new THREE.MeshLambertMaterial({color: 0x77FF77});
+
+  var dpOutlineMat = new THREE.MeshBasicMaterial({color: 0x000000});
+  var dpBorderMat = new THREE.MeshBasicMaterial({color: 0x666666});
+  var highlightedDPBorderMat = new THREE.MeshBasicMaterial({color: 0xFF8800});
+  var selectedDPBorderMat = new THREE.MeshBasicMaterial({color: 0x77FF77});
+
   var defaultDisplayPicTexture = THREE.ImageUtils.loadTexture("defaultProfilePic.png");
 
   var followerColor = 0x5555FF;
   var followeeColor = 0xFF2222;
+  var followerColorH = 0xFFFF44;
+  var followeeColorH = 0xFF0066;
 
   // Limits to the number of followers/following shown per node
   var followersPerNodeShownCap = 20;
   var followingPerNodeShownCap = 20;
 
   function Node(id) {
-    if (Node.nodes[id] !== undefined) return false;
+    if (Node.nodes[id]) return false;
     Node.nodes[id] = this;
 
     this.id = id;
 
     this.profile = null;
+    this.profileLoadAttempted = false;
     this.profileLoaded = false;
     this.showNodeCount = 0;
     this.showProfileCount = 0;
@@ -106,18 +122,27 @@ define(function() {
     this.grabbed = false;
     this.expanded = false;
 
-    this.mesh = new THREE.Mesh(nodeGeometry, nodeMatU);
-    this.meshInScene = false;
-    this.mesh.node = this;
-    this.displayPicMaterial = new THREE.MeshBasicMaterial({map: defaultDisplayPicTexture});
-    this.displayPicMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.65, 0.65, 1, 1), this.displayPicMaterial);
-    this.mesh.add(this.displayPicMesh);
-    this.displayPicMesh.visible = false;
+    this.object = new THREE.Object3D();
+    this.sphereMesh = new THREE.Mesh(sphereGeometry, sphereMat);
+    this.sphereMesh.node = this;
+    this.object.add(this.sphereMesh);
+    this.visible = false;
+
+    this.dpMaterial = new THREE.MeshBasicMaterial({map: defaultDisplayPicTexture});
+    this.dpMesh = new THREE.Mesh(dpGeometry, this.dpMaterial);
+
+    this.dpOutlineMesh = new THREE.Mesh(dpOutlineGeometry, dpOutlineMat);
+    this.dpOutlineMesh.position.set(0, 0, -0.005);
+    this.dpMesh.add(this.dpOutlineMesh);
+    this.dpBorderMesh = new THREE.Mesh(dpBorderGeometry, dpBorderMat);
+    this.dpBorderMesh.position.set(0, 0, -0.01);
+    this.dpMesh.add(this.dpBorderMesh);
+    this.dpBorderOutlineMesh = new THREE.Mesh(dpBorderOutlineGeometry, dpOutlineMat);
+    this.dpBorderOutlineMesh.position.set(0, 0, -0.015);
+    this.dpBorderOutlineMesh.node = this;
+    this.dpMesh.add(this.dpBorderOutlineMesh);
 
     this.textBubble = new TextBubble(this.id);
-    this.displayPicMesh.add(this.textBubble.mesh);
-    this.textBubble.mesh.position.set(0, textBubbleVerticalDisplacement, 0);
-    this.textBubble.mesh.visible = false;
 
     this.edgesToFollowers = new Array();
     this.edgesToFollowing = new Array();
@@ -128,7 +153,7 @@ define(function() {
     this.followerEdgesConstructed = 0;
     this.followingEdgesConstructed = 0;
 
-    this.position = this.mesh.position;
+    this.position = this.object.position;
     this.position.set((Math.random()-0.5)*10, (Math.random()-0.5)*10, (Math.random()-0.5)*10-10);
     this.velocity = new THREE.Vector3();
     this.accel = new THREE.Vector3();
@@ -148,8 +173,8 @@ define(function() {
   Node.prototype.showNode = function() {
     ++this.showNodeCount;
     if (this.showNodeCount === 2) {
-      scene.add(this.mesh);
-      this.meshInScene = true;
+      scene.add(this.object);
+      this.visible = true;
       Node.shownNodes[this.id] = this;
     }
   }
@@ -157,34 +182,33 @@ define(function() {
   Node.prototype.hideNode = function() {
     if (this.showNodeCount === 0) return;
     if (--this.showNodeCount === 1) {
-      scene.remove(this.mesh);
-      this.meshInScene = false;
+      scene.remove(this.object);
+      this.visible = false;
       Node.shownNodes[this.id] = undefined;
     }
   }
 
   Node.prototype.setToShowProfileAppearance = function() {
-    this.mesh.scale.set(2, 2, 2);
-    /* CROSS-ORIGIN ISSUES
-    if (this.profile.profile_image_url) {
-      this.displayPicMaterial.map = THREE.ImageUtils.loadTexture(this.profile.profile_image_url);
-      this.displayPicMaterial.needsUpdate = true;
+    if (!localFetch && this.profile.profile_image_url) {
+      this.dpMaterial.map = THREE.ImageUtils.loadTexture(this.profile.profile_image_url);
+      this.dpMaterial.needsUpdate = true;
     }
-    */
-    this.displayPicMesh.visible = true;
-    this.textBubble.redraw(this.profile.screen_name);
+    this.object.remove(this.sphereMesh);
+    this.object.add(this.dpMesh);
+    this.textBubble.redraw(this.profile.name);
   }
 
   Node.prototype.setToHideProfileAppearance = function() {
-    this.mesh.scale.set(1, 1, 1);
-    this.displayPicMesh.visible = false;
+    this.object.remove(this.dpMesh);
+    this.object.add(this.sphereMesh);
   }
 
   Node.prototype.showProfile = function(followerCount, followingCount) {
     ++this.showProfileCount;
     if (this.showProfileCount === 1) {
 
-      if (this.profileLoaded) {
+      // If we've tried to load the profile before, don't try again
+      if (this.profileLoadAttempted) {
         this.showNode(); // Guarantee a second show so the node is visible
         showNeighbours.call(this, followerCount, followingCount);
       }
@@ -193,6 +217,7 @@ define(function() {
         this.willBeShown = true;
         var me = this;
         fetchProfileByID(this.id, function(profile) {
+          me.profileLoadAttempted = true;
           if (profile) {
             me.showNode(); // Guarantee a second show so the node is visible
             me.profile = profile;
@@ -311,6 +336,8 @@ define(function() {
 
   Node.prototype.showNeighbourProfiles = function(followerCount, followingCount) {
     if (!this.profileLoaded || this.showProfileCount === 0) return;
+
+	//USE BATCH FETCH PHP SCRIPT HERE
 
     if (followersPerNodeShownCap > 0 && followersPerNodeShownCap < this.profile.followers.length) {
       if (!(followerCount >= 0) || followerCount > followersPerNodeShownCap)
@@ -472,7 +499,8 @@ define(function() {
           var displacement = (new THREE.Vector3()).subVectors(follower.position, this.position);
           var length = displacement.length();
           if (length > 0) {
-            var accel = displacement.multiplyScalar(springK*(length-springRestLength)/length);
+            var stretch = length-springRestLength;
+            var accel = displacement.multiplyScalar(springK*stretch*Math.log(stretch > 0 ? stretch : -stretch)/length);
             if (!this.pinned)
               this.springForces[follower.id] = accel;
             if (!follower.pinned)
@@ -530,25 +558,50 @@ define(function() {
       this.accel.add(newAccel);
     }
 
-    if (this.selected) {
-      this.mesh.material = this.showProfileCount ? selectedNodeMatL : selectedNodeMatU;
-    }
-    else if (this.highlighted) {
-      this.mesh.material = this.showProfileCount ? highlightedNodeMatL : highlightedNodeMatU;
+    if (this.profileLoaded && this.showProfileCount) {
+      if (this.selected) {
+        this.dpBorderMesh.material = selectedDPBorderMat;
+      }
+      else if (this.highlighted) {
+        this.dpBorderMesh.material = highlightedDPBorderMat;
+      }
+      else {
+        this.dpBorderMesh.material = dpBorderMat;
+      }
     }
     else {
-      this.mesh.material = this.showProfileCount ? nodeMatL : nodeMatU;
+      if (this.selected) {
+        this.sphereMesh.material = selectedSphereMat;
+      }
+      else if (this.highlighted) {
+        this.sphereMesh.material = highlightedSphereMat;
+      }
+      else {
+        this.sphereMesh.material = sphereMat;
+      }
     }
   }
 
-  Node.prototype.updatePosition = function(deltaTime) {
+  Node.prototype.updatePosition = function(deltaTime, camera) {
     // We don't move selected nodes. They become the centre of focus.
     if (!this.selected) {
       // Add spring forces
+      //if (!this.profileLoaded)
+        //console.log("Updating!");
+
       for (var id in this.springForces)
         this.accel.add(this.springForces[id]);
       // Add drag force
       this.accel.sub(this.velocity.clone().multiplyScalar(dragConstant*this.velocity.length()));
+      // Limit maximum force
+      var forceMag = this.accel.length();
+      if (forceMag === NaN) {
+        this.accel.set(0, 0, 0);
+        console.log("Encountered a NaN accel value for node with ID " + this.id);
+      }
+      else if (forceMag > maxForceMag) {
+        this.accel.multiplyScalar(maxForceMag/forceMag);
+      }
       // Update velocity
       this.velocity.add(this.accel.multiplyScalar(deltaTime));
 
@@ -578,11 +631,15 @@ define(function() {
       this.edgesToFollowers[i].update();
     for (var i = 0; i < this.numShownFollowingNodes; ++i)
       this.edgesToFollowing[i].update();
-  }
 
-  Node.prototype.orient = function(cameraQuaternion) {
-    var q = this.displayPicMesh.quaternion;
-    q.copy(cameraQuaternion);
+    // Update text bubble
+    if (this.textBubble.visible) {
+      this.textBubble.scaleForDistance(zDistanceToCamera(this.position));
+    }
+
+    // Orient the DP
+    var q = this.object.quaternion;
+    q.copy(camera.quaternion);
     q.x *= -1;
     q.y *= -1;
     q.z *= -1;
@@ -591,30 +648,48 @@ define(function() {
 
   Node.prototype.highlight = function() {
     this.highlighted = true;
-    if (!this.selected) {
+    if (this.profileLoaded && !this.textBubble.visible) {
       this.textBubble.redraw();
-      this.textBubble.mesh.visible = true;
+      this.object.add(this.textBubble.mesh);
+      this.textBubble.visible = true;
     }
   }
 
   Node.prototype.unhighlight = function() {
     this.highlighted = false;
-    if(!this.selected)
-      this.textBubble.mesh.visible = false;
+    if(!this.selected && this.textBubble.visible) {
+      this.object.remove(this.textBubble.mesh);
+      this.textBubble.visible = false;
+    }
   }
 
   Node.prototype.select = function() {
     this.selected = true;
-    if (!this.highlighted) {
+    if (this.profileLoaded && !this.textBubble.visible) {
       this.textBubble.redraw();
-      this.textBubble.mesh.visible = true;
+      this.object.add(this.textBubble.mesh);
+      this.textBubble.visible = true;
+    }
+    for (var i = 0; i < this.edgesToFollowers.length; ++i) {
+      this.edgesToFollowers[i].highlight();
+    }
+    for (var i = 0; i < this.edgesToFollowing.length; ++i) {
+      this.edgesToFollowing[i].highlight();
     }
   }
 
   Node.prototype.deselect = function() {
     this.selected = false;
-    if (!this.highlighted)
-      this.textBubble.mesh.visible = false;
+    if (!this.highlighted && this.textBubble.visible) {
+      this.object.remove(this.textBubble.mesh);
+      this.textBubble.visible = false;
+    }
+    for (var i = 0; i < this.edgesToFollowers.length; ++i) {
+      this.edgesToFollowers[i].unhighlight();
+    }
+    for (var i = 0; i < this.edgesToFollowing.length; ++i) {
+      this.edgesToFollowing[i].unhighlight();
+    }
   }
 
   Node.prototype.grab = function() {
@@ -624,6 +699,11 @@ define(function() {
   Node.prototype.releaseGrab = function() {
     this.grabbed = false;
   }
+
+  var lineMaterial = new THREE.LineBasicMaterial(
+    {color: 0xFFFFFF, vertexColors: THREE.VertexColors}
+  );
+
 
   function Edge(follower, followee)
   {
@@ -636,32 +716,48 @@ define(function() {
     this.lineGeo.vertices.push(this.followeeNode.position);
     this.lineGeo.colors.push(new THREE.Color(followerColor));
     this.lineGeo.colors.push(new THREE.Color(followeeColor));
-    this.mesh = new THREE.Line(this.lineGeo, this.lineMaterial);
-    this.meshInScene = false;
+    this.mesh = new THREE.Line(this.lineGeo, lineMaterial);
+    this.visible = false;
+    this.doubleFollower = false;
   }
-
-  Edge.prototype.lineMaterial = new THREE.LineBasicMaterial(
-    {color: 0xFFFFFF, vertexColors: THREE.VertexColors}
-  );
 
   Edge.prototype.update = function() {
     this.lineGeo.verticesNeedUpdate = true;
-    if (this.meshInScene) {
-      if (!this.followerNode.meshInScene || !this.followeeNode.meshInScene) {
+    if (this.visible) {
+      if (!this.followerNode.visible || !this.followeeNode.visible) {
         scene.remove(this.mesh);
-        this.meshInScene = false;
+        this.visible = false;
       }
     }
     else {
-      if (this.followerNode.meshInScene && this.followeeNode.meshInScene) {
+      if (this.followerNode.visible && this.followeeNode.visible) {
         scene.add(this.mesh);
-        this.meshInScene = true;
+        this.visible = true;
       }
     }
   }
 
   Edge.prototype.doubleFollower = function() {
     this.lineGeo.colors[0].setHex(followeeColor);
+    this.lineGeo.colorsNeedUpdate = true;
+    this.doubleFollower = true;
+  }
+
+  Edge.prototype.highlight = function() {
+    this.lineGeo.colors[1].setHex(followeeColorH);
+    if (this.doubleFollower)
+      this.lineGeo.colors[0].setHex(followeeColorH);
+    else
+      this.lineGeo.colors[0].setHex(followerColorH);
+    this.lineGeo.colorsNeedUpdate = true;
+  }
+
+  Edge.prototype.unhighlight = function() {
+    this.lineGeo.colors[1].setHex(followeeColor);
+    if (this.doubleFollower)
+      this.lineGeo.colors[0].setHex(followeeColor);
+    else
+      this.lineGeo.colors[0].setHex(followerColor);
     this.lineGeo.colorsNeedUpdate = true;
   }
 
@@ -671,16 +767,17 @@ define(function() {
 
   var textWidth = 480;
   var textHeight = 64;
-  var textBubbleScale = 0.5;
-  var textBubbleVerticalDisplacement = 1.5;
+  var textBubbleScale = 0.25;
+  var textBubbleVerticalDisplacement = 0.7;
 
   function TextBubble(text)
   {
+    this.visible = false;
     this.texture = new THREE.Texture(drawingCanvas);
     this.material = new THREE.MeshBasicMaterial({map: this.texture});
     this.material.transparent = false;
     this.mesh = new THREE.Mesh(
-      new THREE.PlaneGeometry(textBubbleScale*(textWidth/textHeight), textBubbleScale),
+      new THREE.PlaneGeometry(textWidth/textHeight, 1),
       this.material
     );
     this.text = text;
@@ -699,9 +796,22 @@ define(function() {
     this.texture.needsUpdate = true;
   }
 
+  TextBubble.prototype.scaleForDistance = function(distance) {
+    var scale = distance/60;
+    this.mesh.scale.set(scale, scale, scale);
+    this.mesh.position.set(0, 0.5*dpScale+scale/2, 0.01);
+  }
+
   return Node;
 });
 
 
 
 
+
+
+
+
+
+
+
