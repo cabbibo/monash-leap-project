@@ -149,10 +149,6 @@ function update(deltaTime)
   if (Input.keyboard.keyPressed['2'])
     selectedNode.hideNeighbourProfiles();
 
-  if (Input.keyboard.keyPressed['7'])
-    for (var id in Node.nodes)
-      Node.get(id).showNode();
-
   // Execute coroutines
   for (var i = 0; i < coroutines.length;) {
     if (coroutines[i].func(coroutines[i], deltaTime))
@@ -577,6 +573,8 @@ function main(i, n) {
   timeOfLastFrame = new Date().getTime();
   mainLoop();
 }
+
+
 
 
 

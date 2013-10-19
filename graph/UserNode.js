@@ -2,6 +2,10 @@
 
 define(function() {
 
+  /*
+   * Setting localFetch to true will result in Twitter data being loaded
+   * from the working directory rather than the server.
+   */
   var localFetch = true;
 
   if (localFetch) {
@@ -13,6 +17,9 @@ define(function() {
     var fetchByScreenNameUrl = "http://fit-stu15-v01.infotech.monash.edu.au/~tjon14/fetching/fetch-user-only.php?screen_name=";
   }
 
+  /*
+   * Fetch a single profile using the provided ID.
+   */
   function fetchProfileByID(id, profileFetched) {
     $.get(fetchByIDUrl + id, function(data) {
       var user = JSON.parse(data);
@@ -22,12 +29,15 @@ define(function() {
       else {
         var profile = JSON.parse(user.profile);
         profile.followers = user.followers;
-        profile.following = user.friends;
+        profile.friends = user.friends;
         profileFetched(profile);
       }
     });
   }
 
+  /*
+   * Fetch a single profile using the provided screen name.
+   */
   function fetchProfileByScreenName(screenName, profileFetched) {
     $.get(fetchByScreenNameUrl + screenName, function(data) {
       var user = JSON.parse(data);
@@ -37,12 +47,16 @@ define(function() {
       else {
         var profile = JSON.parse(user.profile);
         profile.followers = user.followers;
-        profile.following = user.friends;
+        profile.friends = user.friends;
         profileFetched(profile);
       }
     });
   }
 
+  /*
+   * Create a new node using the provided screen name to load their profile.
+   * This function should be called to get the root user for the graph.
+   */
   Node.newNodeLoadedFromScreenName = function(screenName, profileLoaded) {
     var profile = fetchProfileByScreenName(screenName, function(profile) {
       if (profile) {
@@ -60,24 +74,22 @@ define(function() {
     });
   }
 
-  Node.newNodes = new Array();
-
   // Graph physics variables
   var springRestLength = 10;
   var springK = 10;
   var repulsionStrength = 2000;
-  var dragConstant = 0.2;
-  var pointerDragForce = 20;
+  var dragConstant = 0.2; // Drag forces
+  var pointerDragForce = 20; // Force with which nodes are dragged by the user
   var maxPointerDragAccel = 8000;
   var stabilisingForce = 50; // Constant force applied to all nodes to stop slow movements
-  var maxForceMag = 500;
+  var maxForceMag = 500; // The maximum net force that will be applied to a node in a frame
 
   // Variables for node models
   var sphereRadius = 0.5;
   var sphereSegments = 16;
   var sphereRings = 16;
-
   var sphereGeometry = new THREE.SphereGeometry(sphereRadius, sphereSegments, sphereRings);
+
   var dpScale = 0.82; // The size of the display pic with respect to the size of the border
   var dpOutlineScale = 0.86;
   var dpBorderScale = 0.96;
@@ -97,40 +109,43 @@ define(function() {
 
   var defaultDisplayPicTexture = THREE.ImageUtils.loadTexture("defaultProfilePic.png");
 
+  // Colourings for edges
   var followerColor = 0x5555FF;
-  var followeeColor = 0xFF2222;
-  var followerColorH = 0xFFFF44;
-  var followeeColorH = 0xFF0066;
+  var friendColor = 0xFF2222;
+  var followerColorHighlighted = 0xFF00FF;
+  var friendColorHighlighted = 0xFFFF44;
 
-  // Limits to the number of followers/following shown per node
+  // Limits to the number of followers/friends shown per node
   var followersPerNodeShownCap = 20;
-  var followingPerNodeShownCap = 20;
+  var friendsPerNodeShownCap = 20;
 
+  /*
+   * Constructor for the nodes of the graph. Initializes a node with all required attributes.
+   */
   function Node(id) {
     if (Node.nodes[id]) return false;
     Node.nodes[id] = this;
 
-    this.id = id;
+    this.id = id; // Unique identifier for the node (originated from Twitter)
 
     this.profile = null;
-    this.profileLoadAttempted = false;
+    this.profileLoadAttempted = false; // Flag to only try loading a profile once
     this.profileLoaded = false;
-    this.showNodeCount = 0;
-    this.showProfileCount = 0;
+    this.showNodeCount = 0; // The net number of requests to display the node
+    this.showProfileCount = 0; // The net number of requests to show the node's profile
     this.highlighted = false;
     this.selected = false;
     this.grabbed = false;
-    this.expanded = false;
+    this.visible = false;
 
+    // The base object which controls the position of the node and to which all other objects are attached
     this.object = new THREE.Object3D();
     this.sphereMesh = new THREE.Mesh(sphereGeometry, sphereMat);
     this.sphereMesh.node = this;
     this.object.add(this.sphereMesh);
-    this.visible = false;
 
     this.dpMaterial = new THREE.MeshBasicMaterial({map: defaultDisplayPicTexture});
     this.dpMesh = new THREE.Mesh(dpGeometry, this.dpMaterial);
-
     this.dpOutlineMesh = new THREE.Mesh(dpOutlineGeometry, dpOutlineMat);
     this.dpOutlineMesh.position.set(0, 0, -0.005);
     this.dpMesh.add(this.dpOutlineMesh);
@@ -144,32 +159,38 @@ define(function() {
 
     this.textBubble = new TextBubble(this.id);
 
-    this.edgesToFollowers = new Array();
-    this.edgesToFollowing = new Array();
-    this.numShownFollowerNodes = 0;
-    this.numShownFollowingNodes = 0;
-    this.numShownFollowerProfiles = 0;
-    this.numShownFollowingProfiles = 0;
+    // Associative array to store references to edge objects
+    this.edgesToFollowers = {};
+    this.edgesToFriends = {};
     this.followerEdgesConstructed = 0;
-    this.followingEdgesConstructed = 0;
+    this.friendEdgesConstructed = 0;
+
+    this.numShownFollowerNodes = 0;
+    this.numShownFriendNodes = 0;
+    this.numShownFollowerProfiles = 0;
+    this.numShownFriendProfiles = 0;
 
     this.position = this.object.position;
-    this.position.set((Math.random()-0.5)*10, (Math.random()-0.5)*10, (Math.random()-0.5)*10-10);
+    this.position.set(0, 0, -10);
     this.velocity = new THREE.Vector3();
     this.accel = new THREE.Vector3();
-    this.springForces = {};
+    this.springForces = {}; // Associative array to store spring forces during force calculations
   }
 
-  Node.nodes = {};
-  Node.shownNodes = {};
+  Node.nodes = {}; // Dictionary of created nodes
+  Node.shownNodes = {}; // Dictionary of shown nodes
 
   Node.get = function(id) {
     return Node.nodes[id];
   }
 
-  // We don't want to see the node unless more than one show call has been made
-  // A second show call will be made if a second node is interested in this node
-  // or if the node's profile has been asked to be shown
+  /*
+   * This function is called when a node is to be shown. We don't want to see the node
+   * unless more than one show call has been made, since we're not interested in displaying
+   * nodes with only one neighbour and without profiles. A second show call will be made
+   * if a second node is interested in this node or if the node's profile has been asked
+   * to display.
+   */
   Node.prototype.showNode = function() {
     ++this.showNodeCount;
     if (this.showNodeCount === 2) {
@@ -188,8 +209,13 @@ define(function() {
     }
   }
 
+  /*
+   * Adjust this node's appearance so that it displays the user's name and profile image.
+   */
   Node.prototype.setToShowProfileAppearance = function() {
-    if (!localFetch && this.profile.profile_image_url) {
+    // If the profile hasn't been loaded before, we're not testing locally,
+    // and the profile image URL exists, fetch the profile image
+    if (!this.profileLoaded && !localFetch && this.profile.profile_image_url) {
       this.dpMaterial.map = THREE.ImageUtils.loadTexture(this.profile.profile_image_url);
       this.dpMaterial.needsUpdate = true;
     }
@@ -198,19 +224,29 @@ define(function() {
     this.textBubble.redraw(this.profile.name);
   }
 
+  /*
+   * Hide this node's profile image and return it to the sphere appearance.
+   */
   Node.prototype.setToHideProfileAppearance = function() {
     this.object.remove(this.dpMesh);
     this.object.add(this.sphereMesh);
   }
 
-  Node.prototype.showProfile = function(followerCount, followingCount) {
+  /*
+   * Show the profile information for this node. This can be requested multiple times.
+   * The profile information is first loaded if necessary. A count is maintained so
+   * that the profile remains shown until all the nodes that asked for it to be shown
+   * ask for it to be hidden again.
+   */
+  Node.prototype.showProfile = function(followerCount, friendCount) {
     ++this.showProfileCount;
+    this.showNode();
     if (this.showProfileCount === 1) {
-
       // If we've tried to load the profile before, don't try again
       if (this.profileLoadAttempted) {
-        this.showNode(); // Guarantee a second show so the node is visible
-        showNeighbours.call(this, followerCount, followingCount);
+        if (this.profileLoaded)
+          this.setToShowProfileAppearance();
+        this.showNeighbours(followerCount, friendCount);
       }
       else {
         // Fetch the profile and then show it
@@ -219,15 +255,15 @@ define(function() {
         fetchProfileByID(this.id, function(profile) {
           me.profileLoadAttempted = true;
           if (profile) {
-            me.showNode(); // Guarantee a second show so the node is visible
             me.profile = profile;
-            me.profileLoaded = true;
-            // Before showing the profile, ensure that something didn't request the profile to be hidden again in the meantime
+            // Before showing the profile, ensure that something didn't request the
+            // profile to be hidden again in the meantime
             if (me.willBeShown) {
               me.setToShowProfileAppearance();
-              showNeighbours.call(me, followerCount, followingCount);
+              me.showNeighbours(followerCount, friendCount);
               me.willBeShown = false;
             }
+            me.profileLoaded = true;
           }
           else {
             console.log("Failed to load profile for user with ID " + me.id + ".");
@@ -252,28 +288,54 @@ define(function() {
     }
   }
 
-  // The next two methods are not added to the prototype to ensure we never try to call
-  // them from outside this module. They should be private.
-
-  function showNeighbours(followerCount, followingCount) {
+  // If the follower count is invalid, or greater than the cap, adjust it.
+  Node.prototype.checkFollowerCount = function(followerCount) {
     if (followersPerNodeShownCap > 0 && followersPerNodeShownCap < this.profile.followers.length) {
+      // This also handles the case where followerCount is undefined
       if (!(followerCount >= 0) || followerCount > followersPerNodeShownCap)
-        followerCount = followersPerNodeShownCap;
+        return followersPerNodeShownCap;
+      else
+        return followerCount;
     }
     else {
       if (!(followerCount >= 0) || followerCount > this.profile.followers.length)
-        followerCount = this.profile.followers.length;
+        return this.profile.followers.length;
+      else
+        return followerCount;
     }
+  }
 
-    if (followingPerNodeShownCap > 0 && followingPerNodeShownCap < this.profile.following.length) {
-      if (!(followingCount >= 0) || followingCount > followingPerNodeShownCap)
-        followingCount = followingPerNodeShownCap;
+  // If the friend count is invalid, or greater than the cap, adjust it.
+  Node.prototype.checkFriendCount = function(friendCount) {
+    if (friendsPerNodeShownCap > 0 && friendsPerNodeShownCap < this.profile.friends.length) {
+      // This also handles the case where friendCount is undefined
+      if (!(friendCount >= 0) || friendCount > friendsPerNodeShownCap)
+        return friendsPerNodeShownCap;
+      else
+        return friendCount;
     }
     else {
-      if (!(followingCount >= 0) || followingCount > this.profile.following.length)
-        followingCount = this.profile.following.length;
+      if (!(friendCount >= 0) || friendCount > this.profile.friends.length)
+        return this.profile.friends.length;
+      else
+        return friendCount;
     }
 
+  }
+
+  /*
+   * Show all the neighbours of this node. This won't show the profiles of the neighbours,
+   * so it shouldn't be called outside of this module. Use showNeighbourProfiles for that.
+   */
+  Node.prototype.showNeighbours = function(followerCount, friendCount) {
+    this.showNeighboursCheckedArgs(this.checkFollowerCount(followerCount), this.checkFriendCount(friendCount));
+    // Call the select function again to ensure new edges are highlighted
+    if (this.selected && appearingNodes.length > 0)
+      this.select();
+  }
+
+  Node.prototype.showNeighboursCheckedArgs = function(followerCount, friendCount) {
+    // Keep track of the nodes that will be newly appearing on the graph.
     var appearingNodes = new Array();
 
     // Show the specified number of followers if they are not already shown, creating their nodes if they do not exist
@@ -288,8 +350,8 @@ define(function() {
         appearingNodes.push(node);
     }
 
-    for (var i = this.numShownFollowingNodes; i < followingCount; ++i) {
-      var id = this.profile.following[i];
+    for (var i = this.numShownFriendNodes; i < friendCount; ++i) {
+      var id = this.profile.friends[i];
       var node = Node.get(id);
       if (!node)
         node = new Node(id);
@@ -299,67 +361,43 @@ define(function() {
         appearingNodes.push(node);
     }
 
-    // Space the new nodes to be shown around this node
-    var n = appearingNodes.length;
-    var dlong = Math.PI*(3-Math.sqrt(5));
-    var dz = 2.0/n;
-    var long = 0;
-    var z = 1 - dz/2;
-    for (var k = 0; k < n; ++k) {
-      var r = Math.sqrt(1-z*z);
-      var pos = appearingNodes[k].position;
-      pos.copy(this.position);
-      pos.x += Math.cos(long)*r;
-      pos.y += Math.sin(long)*r;
-      pos.z += z;
-      z = z - dz;
-      long = long + dlong;
-    }
-
-    this.constructEdges(followerCount, followingCount);
-
+    positionAppearingNodes(appearingNodes, this.position);
+    this.constructEdges(followerCount, friendCount);
     this.numShownFollowerNodes = followerCount;
-    this.numShownFollowingNodes = followingCount;
+    this.numShownFriendNodes = friendCount;
     this.profileIsShown = true;
   }
 
-  function hideNeighbours() {
+  /*
+   * Hide all the neighbours of this node.
+   */
+  Node.prototype.hideNeighbours = function() {
     for (var i = 0; i < this.numShownFollowerNodes; ++i)
       Node.get(this.profile.followers[i]).hideNode();
 
-    for (var i = 0; i < this.numShownFollowingNodes; ++i)
-      Node.get(this.profile.following[i]).hideNode();
+    for (var i = 0; i < this.numShownFriendNodes; ++i)
+      Node.get(this.profile.friends[i]).hideNode();
 
     this.numShownFollowerNodes = 0;
-    this.numShownFollowingNodes = 0;
+    this.numShownFriendNodes = 0;
   }
 
-  Node.prototype.showNeighbourProfiles = function(followerCount, followingCount) {
+  /*
+   * Show the profiles of all this node's neighbours, displaying the neighbour
+   * nodes first if need be.
+   */
+  Node.prototype.showNeighbourProfiles = function(followerCount, friendCount) {
     if (!this.profileLoaded || this.showProfileCount === 0) return;
 
 	//USE BATCH FETCH PHP SCRIPT HERE
 
-    if (followersPerNodeShownCap > 0 && followersPerNodeShownCap < this.profile.followers.length) {
-      if (!(followerCount >= 0) || followerCount > followersPerNodeShownCap)
-        followerCount = followersPerNodeShownCap;
-    }
-    else {
-      if (!(followerCount >= 0) || followerCount > this.profile.followers.length)
-        followerCount = this.profile.followers.length;
-    }
+    followerCount = this.checkFollowerCount(followerCount);
+    friendCount = this.checkFriendCount(friendCount);
 
-    if (followingPerNodeShownCap > 0 && followingPerNodeShownCap < this.profile.following.length) {
-      if (!(followingCount >= 0) || followingCount > followingPerNodeShownCap)
-        followingCount = followingPerNodeShownCap;
-    }
-    else {
-      if (!(followingCount >= 0) || followingCount > this.profile.following.length)
-        followingCount = this.profile.following.length;
-    }
+    // Ensure that the nodes are shown before we show their profiles
+    this.showNeighboursCheckedArgs.call(this, followerCount, friendCount);
 
-    // Ensure that the nodes are shown regularly before we show their profiles
-    showNeighbours.call(this, followerCount, followingCount);
-
+    // Keep track of the nodes that will be newly appearing on the graph.
     var appearingNodes = new Array();
 
     // Show the specified number of followers, creating their nodes if they do not exist
@@ -373,8 +411,8 @@ define(function() {
       node.showProfile();
     }
 
-    for (var i = this.numShownFollowingProfiles; i < followingCount; ++i) {
-      var id = this.profile.following[i];
+    for (var i = this.numShownFriendProfiles; i < friendCount; ++i) {
+      var id = this.profile.friends[i];
       var node = Node.get(id);
       // Node is about to be shown
       if (node.showNodeCount === 1) {
@@ -383,6 +421,21 @@ define(function() {
       node.showProfile();
     }
 
+    positionAppearingNodes(appearingNodes, this.position);
+    this.numShownFollowerProfiles = followerCount;
+    this.numShownFriendProfiles = friendCount;
+
+    // Call the select function again to ensure new edges are highlighted
+    if (this.selected && appearingNodes.length > 0)
+      this.select();
+  }
+
+  // May not need implementation // Node.prototype.hideNeighbourProfiles = function() {}
+
+  /*
+   * Position the provided nodes equally around the provided position.
+   */
+  function positionAppearingNodes(appearingNodes, centrePosition) {
     // Space the new nodes to be shown around this node
     var n = appearingNodes.length;
     var dlong = Math.PI*(3-Math.sqrt(5));
@@ -392,109 +445,101 @@ define(function() {
     for (var k = 0; k < n; ++k) {
       var r = Math.sqrt(1-z*z);
       var pos = appearingNodes[k].position;
-      pos.copy(this.position);
+      pos.copy(centrePosition);
       pos.x += Math.cos(long)*r;
       pos.y += Math.sin(long)*r;
       pos.z += z;
       z = z - dz;
       long = long + dlong;
     }
-
-    this.numShownFollowerProfiles = followerCount;
-    this.numShownFollowingProfiles = followingCount;
   }
 
-  Node.prototype.hideNeighbourProfiles = function() {
-
-  }
-
-  Node.prototype.constructEdges = function(followerCount, followingCount) {
+  /*
+   * Construct the edge objects for the specified number of followers and friends.
+   */
+  Node.prototype.constructEdges = function(followerCount, friendCount) {
     var followers = this.profile.followers;
-    var following = this.profile.following;
+    var friends = this.profile.friends;
     // For all new shown follower nodes (where the edge isn't already constructed)
-    NEXT_FOLLOWER: for (var i = this.followerEdgesConstructed; i < followerCount; ++i) {
-      // If we already built the following edge, update the existing edge
-      for (var j = 0; j < this.followingEdgesConstructed; ++j) {
-        if (followers[i] === following[j]) {
-          this.edgesToFollowers[i] = this.edgesToFollowing[j];
-          this.edgesToFollowers[i].doubleFollower();
-          continue;
-        }
+    for (var i = this.followerEdgesConstructed; i < followerCount; ++i) {
+      var followerID = followers[i];
+      var followerNode = Node.get(followerID);
+
+      // If we already built the friend edge, update the existing edge
+      if (this.edgesToFriends[followerID]) {
+        this.edgesToFollowers[followerID] = this.edgesToFriends[followerID];
+        this.edgesToFollowers[followerID].colorForDoubleFollower();
+        continue;
       }
 
-      var followerNode = Node.get(followers[i]);
-
       if (followerNode.profileLoaded) {
-        // If the follower node already has a following edge connected to us, keep the existing edge
-        var theirFollowing = followerNode.profile.following;
-        for (var j = 0; j < followerNode.followingEdgesConstructed; ++j) {
-          if (theirFollowing[j] === this.id) {
-            this.edgesToFollowers[i] = followerNode.edgesToFollowing[j];
-            continue NEXT_FOLLOWER;
-          }
+        // If the follower node already has a friend edge connected to us, keep the existing edge
+        if (followerNode.edgesToFriends[this.id]) {
+          this.edgesToFollowers[followerID] = followerNode.edgesToFriends[this.id];
+          continue ;
         }
 
         // If the follower node already has a follower edge connected to us, update the existing edge
         // to reflect that they are also following us
-        var theirFollowers = followerNode.profile.followers;
-        for (var j = 0; j < followerNode.followerEdgesConstructed; ++j) {
-          if (theirFollowers[j] === this.id) {
-            this.edgesToFollowers[i] = followerNode.edgesToFollowers[j];
-            this.edgesToFollowers[i].doubleFollower();
-            continue NEXT_FOLLOWER;
-          }
-        }
-      }
-      // Create a new edge and store it in the same index that the follower node is in
-      this.edgesToFollowers[i] = new Edge(followerNode, this);
-    }
-    this.followerEdgesConstructed = this.numShownFollowerNodes;
-
-    // Repeat for new shown following node
-    NEXT_FOLLOWING: for (var i = this.followingEdgesConstructed; i < followingCount; ++i) {
-      // If we already built the follower edge, update the existing edge
-      for (var j = 0; j < this.followerEdgesConstructed; ++j) {
-        if (following[i] === followers[j]) {
-          this.edgesToFollowing[i] = this.edgesToFollowers[j];
-          this.edgesToFollowing[i].doubleFollower();
+        if (followerNode.edgesToFollowers[this.id]) {
+          this.edgesToFollowers[followerID] = followerNode.edgesToFollowers[this.id];
+          this.edgesToFollowers[followerID].colorForDoubleFollower();
           continue;
         }
       }
+      // Create a new edge
+      var edge = new Edge(followerNode, this);
+      this.edgesToFollowers[followerID] = edge;
+      followerNode.edgesToFriends[this.id] = edge;
+    }
+    this.followerEdgesConstructed = followerCount;
 
-      var followingNode = Node.get(following[i]);
+    // Repeat for new shown friends node
+    for (var i = this.friendEdgesConstructed; i < friendCount; ++i) {
+      var friendID = friends[i];
+      var friendNode = Node.get(friendID);
 
-      if (followingNode.profileLoaded) {
-        // If the following node already has a follower edge connected to us, keep the existing edge
-        var theirFollowers = followingNode.profile.followers;
-        for (var j = 0; j < followingNode.followerEdgesConstructed; ++j) {
-          if (theirFollowers[j] === this.id) {
-            this.edgesToFollowing[i] = followingNode.edgesToFollowers[j];
-            continue NEXT_FOLLOWING;
-          }
+      // If we already built the follower edge, update the existing edge
+      if (this.edgesToFollowers[friendID]) {
+        this.edgesToFriends[friendID] = this.edgesToFollowers[friendID];
+        this.edgesToFriends[friendID].colorForDoubleFollower();
+        continue;
+      }
+
+      if (friendNode.profileLoaded) {
+        // If the friend node already has a follower edge connected to us, keep the existing edge
+        if (friendNode.edgesToFollowers[this.id]) {
+          this.edgesToFriends[friendID] = friendNode.edgesToFollowers[this.id];
+          continue;
         }
-        // If the following node already has a following edge connected to us, update the existing edge
-        // to reflect that we are also following them
-        var theirFollowing = followingNode.profile.following;
-        for (var j = 0; j < followingNode.followingEdgesConstructed; ++j) {
-          if (theirFollowing[j] === this.id) {
-            this.edgesToFollowing[i] = followingNode.edgesToFollowing[j];
-            this.edgesToFollowing[i].doubleFollower();
-            continue NEXT_FOLLOWING;
-          }
+        // If the friend node already has a friend edge connected to us, update the existing edge
+        // to reflect that we are also a friend of them
+        var theirFriends = friendNode.profile.friends;
+        if (friendNode.edgesToFriends[this.id]) {
+          this.edgesToFriends[friendID] = friendNode.edgesToFriends[this.id];
+          this.edgesToFriends[friendID].colorForDoubleFollower();
+          continue;
         }
       }
-      // Create a new edge and store it in the same index that the following node is in
-      this.edgesToFollowing[i] = new Edge(this, followingNode);
+      // Create a new edge
+      var edge = new Edge(this, friendNode);
+      this.edgesToFriends[friendID] = edge;
+      friendNode.edgesToFollowers[this.id] = edge;
     }
-    this.followingEdgesConstructed = this.numShownFollowingNodes;
+    this.friendEdgesConstructed = friendCount;
   }
 
+  /*
+   * Calculate all the forces applied to this node, as well as the forces this node applies
+   * to its neighbours. The position of the node is not updated in this method.
+   */
   Node.prototype.calculateForces = function() {
     if (this.profileLoaded) {
-      // Add spring springForces between connected nodes
+      // Add spring forces between connected nodes
+
       for (var i = 0; i < this.numShownFollowerNodes; ++i) {
         var follower = Node.get(this.profile.followers[i]);
-        // If the springForces haven't already been added by the other node
+        // If the spring forces haven't already been added by the other node
         if (!this.springForces[follower.id]) {
           var displacement = (new THREE.Vector3()).subVectors(follower.position, this.position);
           var length = displacement.length();
@@ -509,9 +554,9 @@ define(function() {
         }
       }
 
-      for (var i = 0; i < this.numShownFollowingNodes; ++i) {
-        var following = Node.get(this.profile.following[i]);
-        // If the springForces haven't already been added by the other node
+      for (var i = 0; i < this.numShownFriendNodes; ++i) {
+        var following = Node.get(this.profile.friends[i]);
+        // If the spring forces haven't already been added by the other node
         if (!this.springForces[following.id]) {
           var displacement = (new THREE.Vector3()).subVectors(following.position, this.position);
           var length = displacement.length();
@@ -547,7 +592,7 @@ define(function() {
       // Now in world space
       projector.unprojectVector(pointerPos, camera);
 
-      // Displacement of the pointer pointer from the node
+      // Displacement of the pointer from the node
       var displacement = pointerPos.sub(this.position);
       // Force is proportional to square distance and drag force
       var newAccel = displacement.multiplyScalar(displacement.length() * pointerDragForce);
@@ -558,6 +603,7 @@ define(function() {
       this.accel.add(newAccel);
     }
 
+    // Set the materials of the node's meshes to reflect its current state
     if (this.profileLoaded && this.showProfileCount) {
       if (this.selected) {
         this.dpBorderMesh.material = selectedDPBorderMat;
@@ -582,10 +628,16 @@ define(function() {
     }
   }
 
+  /*
+   * Update the position of the node using the forces calculated in the
+   * calculateForces method.
+   */
   Node.prototype.updatePosition = function(deltaTime, camera) {
     // We don't move selected nodes. They become the centre of focus.
     if (!this.selected) {
       // Add spring forces
+
+      // CHECK THAT SPRING FORCES ARE ACTUALLY WORKING PROPERLY. I'M SEEING STRANGE BEHAVIOUR!
       //if (!this.profileLoaded)
         //console.log("Updating!");
 
@@ -610,6 +662,7 @@ define(function() {
         this.position.add(this.velocity.clone().multiplyScalar(deltaTime));
       }
       else {
+        // Apply stabilising force (to help stop prolonged, slow movement of nodes)
         var vmag = this.velocity.length();
         var vdir = this.velocity.clone().divideScalar(vmag);
         var negatedVelocity = deltaTime*stabilisingForce;
@@ -627,10 +680,10 @@ define(function() {
     this.accel.set(0, 0, 0);
 
     // Update edges
-    for (var i = 0; i < this.numShownFollowerNodes; ++i)
-      this.edgesToFollowers[i].update();
-    for (var i = 0; i < this.numShownFollowingNodes; ++i)
-      this.edgesToFollowing[i].update();
+    for (var ID in this.edgesToFollowers)
+      this.edgesToFollowers[ID].update();
+    for (var ID in this.edgesToFriends)
+      this.edgesToFriends[ID].update();
 
     // Update text bubble
     if (this.textBubble.visible) {
@@ -670,12 +723,10 @@ define(function() {
       this.object.add(this.textBubble.mesh);
       this.textBubble.visible = true;
     }
-    for (var i = 0; i < this.edgesToFollowers.length; ++i) {
-      this.edgesToFollowers[i].highlight();
-    }
-    for (var i = 0; i < this.edgesToFollowing.length; ++i) {
-      this.edgesToFollowing[i].highlight();
-    }
+    for (var ID in this.edgesToFollowers)
+      this.edgesToFollowers[ID].highlight();
+    for (var ID in this.edgesToFriends)
+      this.edgesToFriends[ID].highlight();
   }
 
   Node.prototype.deselect = function() {
@@ -684,12 +735,10 @@ define(function() {
       this.object.remove(this.textBubble.mesh);
       this.textBubble.visible = false;
     }
-    for (var i = 0; i < this.edgesToFollowers.length; ++i) {
-      this.edgesToFollowers[i].unhighlight();
-    }
-    for (var i = 0; i < this.edgesToFollowing.length; ++i) {
-      this.edgesToFollowing[i].unhighlight();
-    }
+    for (var ID in this.edgesToFollowers)
+      this.edgesToFollowers[ID].unhighlight();
+    for (var ID in this.edgesToFriends)
+      this.edgesToFriends[ID].unhighlight();
   }
 
   Node.prototype.grab = function() {
@@ -704,7 +753,9 @@ define(function() {
     {color: 0xFFFFFF, vertexColors: THREE.VertexColors}
   );
 
-
+  /*
+   * The Edge object visually depicts a relationship between two nodes.
+   */
   function Edge(follower, followee)
   {
     this.followerNode = follower;
@@ -715,61 +766,70 @@ define(function() {
     this.lineGeo.vertices.push(this.followerNode.position);
     this.lineGeo.vertices.push(this.followeeNode.position);
     this.lineGeo.colors.push(new THREE.Color(followerColor));
-    this.lineGeo.colors.push(new THREE.Color(followeeColor));
+    this.lineGeo.colors.push(new THREE.Color(friendColor));
     this.mesh = new THREE.Line(this.lineGeo, lineMaterial);
     this.visible = false;
     this.doubleFollower = false;
   }
 
+  /*
+   * Determine whether the edge should currently be visible and
+   * force an update of the vertex positions of the edge.
+   */
   Edge.prototype.update = function() {
-    this.lineGeo.verticesNeedUpdate = true;
     if (this.visible) {
       if (!this.followerNode.visible || !this.followeeNode.visible) {
         scene.remove(this.mesh);
         this.visible = false;
       }
+      else this.lineGeo.verticesNeedUpdate = true;
     }
     else {
       if (this.followerNode.visible && this.followeeNode.visible) {
         scene.add(this.mesh);
         this.visible = true;
+        this.lineGeo.verticesNeedUpdate = true;
       }
     }
   }
 
-  Edge.prototype.doubleFollower = function() {
-    this.lineGeo.colors[0].setHex(followeeColor);
+  /*
+   * Alter the colours of the edge to reflect the double following
+   * relationship.
+   */
+  Edge.prototype.colorForDoubleFollower = function() {
+    this.lineGeo.colors[0].setHex(friendColor);
     this.lineGeo.colorsNeedUpdate = true;
     this.doubleFollower = true;
   }
 
   Edge.prototype.highlight = function() {
-    this.lineGeo.colors[1].setHex(followeeColorH);
+    this.lineGeo.colors[1].setHex(friendColorHighlighted);
     if (this.doubleFollower)
-      this.lineGeo.colors[0].setHex(followeeColorH);
+      this.lineGeo.colors[0].setHex(friendColorHighlighted);
     else
-      this.lineGeo.colors[0].setHex(followerColorH);
+      this.lineGeo.colors[0].setHex(followerColorHighlighted);
     this.lineGeo.colorsNeedUpdate = true;
   }
 
   Edge.prototype.unhighlight = function() {
-    this.lineGeo.colors[1].setHex(followeeColor);
+    this.lineGeo.colors[1].setHex(friendColor);
     if (this.doubleFollower)
-      this.lineGeo.colors[0].setHex(followeeColor);
+      this.lineGeo.colors[0].setHex(friendColor);
     else
       this.lineGeo.colors[0].setHex(followerColor);
     this.lineGeo.colorsNeedUpdate = true;
   }
 
-  /*
-  The Text Bubble prototype which displays information about a user
-  */
-
+  // Text bubble-related variables
   var textWidth = 480;
   var textHeight = 64;
   var textBubbleScale = 0.25;
   var textBubbleVerticalDisplacement = 0.7;
 
+  /*
+   * The TextBubble object displays a user's name on a label in 3D space.
+   */
   function TextBubble(text)
   {
     this.visible = false;
@@ -796,6 +856,11 @@ define(function() {
     this.texture.needsUpdate = true;
   }
 
+  /*
+   * Scale the text bubble such that it is always the same size on the screen
+   * irrespective of it's distance from the camera. The camera distance should
+   * be provided as an argument to this function.
+   */
   TextBubble.prototype.scaleForDistance = function(distance) {
     var scale = distance/60;
     this.mesh.scale.set(scale, scale, scale);
@@ -804,6 +869,8 @@ define(function() {
 
   return Node;
 });
+
+
 
 
 
