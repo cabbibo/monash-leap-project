@@ -11,6 +11,10 @@ var projector = new THREE.Projector();
 var nearClip = 1, farClip = 1000;
 var renderer;
 
+// Variables concerning simulation limits for performance
+var nodeSimCreditPerFrame = 100;
+var nextNodeIndexToSimulate = -1;
+
 // Oculus Rift variables
 if (usingRift) {
   var riftRenderer;
@@ -332,13 +336,33 @@ function update(deltaTime)
   // Move the camera away from the centroid again
   camera.position.sub(displacement);
 
-  for (var username in Node.shownNodes) {
-    Node.shownNodes[username].calculateForces();
-  }
+  // Update the graph
+  var ids = Object.keys(Node.shownNodes);
+  if (ids.length > 0) {
+    for (var i = 0; i < ids.length; ++i)
+      Node.shownNodes[ids[i]].addTime(deltaTime);
 
-  // Apply net force for each node
-  for (var username in Node.shownNodes) {
-    Node.shownNodes[username].updatePosition(deltaTime, camera);
+    // Do a physics update for as many nodes as we have an allowance for
+    var nodeSimCredit = nodeSimCreditPerFrame;
+    var n = nextNodeIndexToSimulate;
+    while (nodeSimCredit > 0) {
+      n = (n+1) % ids.length;
+      Node.shownNodes[ids[n]].calculateForces();
+      --nodeSimCredit;
+    }
+    nodeSimCredit = nodeSimCreditPerFrame;
+    n = nextNodeIndexToSimulate;
+    while (nodeSimCredit > 0) {
+      n = (n+1) % ids.length;
+      Node.shownNodes[ids[n]].applyForces(camera);
+      --nodeSimCredit;
+    }
+
+    // Update the components of all nodes (text bubble direction etc)
+    for (var i = 0; i < ids.length; ++i)
+      Node.shownNodes[ids[i]].updateComponents(deltaTime);
+
+    nextNodeIndexToSimulate = n;
   }
 
   // Set the fog distance
@@ -573,6 +597,8 @@ function main(i, n) {
   timeOfLastFrame = new Date().getTime();
   mainLoop();
 }
+
+
 
 
 

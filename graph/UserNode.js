@@ -83,6 +83,7 @@ define(function() {
   var maxPointerDragAccel = 8000;
   var stabilisingForce = 50; // Constant force applied to all nodes to stop slow movements
   var maxForceMag = 500; // The maximum net force that will be applied to a node in a frame
+  var maxPhysicsTimeStep = 1/50; // The maxmimum about of time a single step of simulation can be
 
   // Variables for node models
   var sphereRadius = 0.5;
@@ -175,6 +176,7 @@ define(function() {
     this.velocity = new THREE.Vector3();
     this.accel = new THREE.Vector3();
     this.springForces = {}; // Associative array to store spring forces during force calculations
+    this.accruedTime = 0;
   }
 
   Node.nodes = {}; // Dictionary of created nodes
@@ -330,7 +332,7 @@ define(function() {
   Node.prototype.showNeighbours = function(followerCount, friendCount) {
     this.showNeighboursCheckedArgs(this.checkFollowerCount(followerCount), this.checkFriendCount(friendCount));
     // Call the select function again to ensure new edges are highlighted
-    if (this.selected && appearingNodes.length > 0)
+    if (this.selected)
       this.select();
   }
 
@@ -530,6 +532,14 @@ define(function() {
   }
 
   /*
+   * This function allows a node to keep track of how much time has passed since its last
+   * physics update.
+   */
+  Node.prototype.addTime = function(deltaTime) {
+    this.accruedTime += deltaTime;
+  }
+
+  /*
    * Calculate all the forces applied to this node, as well as the forces this node applies
    * to its neighbours. The position of the node is not updated in this method.
    */
@@ -632,17 +642,17 @@ define(function() {
    * Update the position of the node using the forces calculated in the
    * calculateForces method.
    */
-  Node.prototype.updatePosition = function(deltaTime, camera) {
+  Node.prototype.applyForces = function(camera) {
+    if (this.accruedTime > maxPhysicsTimeStep)
+      this.accruedTime = maxPhysicsTimeStep;
+
     // We don't move selected nodes. They become the centre of focus.
     if (!this.selected) {
       // Add spring forces
-
-      // CHECK THAT SPRING FORCES ARE ACTUALLY WORKING PROPERLY. I'M SEEING STRANGE BEHAVIOUR!
-      //if (!this.profileLoaded)
-        //console.log("Updating!");
-
-      for (var id in this.springForces)
+      for (var id in this.springForces) {
         this.accel.add(this.springForces[id]);
+      }
+
       // Add drag force
       this.accel.sub(this.velocity.clone().multiplyScalar(dragConstant*this.velocity.length()));
       // Limit maximum force
@@ -655,21 +665,21 @@ define(function() {
         this.accel.multiplyScalar(maxForceMag/forceMag);
       }
       // Update velocity
-      this.velocity.add(this.accel.multiplyScalar(deltaTime));
+      this.velocity.add(this.accel.multiplyScalar(this.accruedTime));
 
       // Round to zero for very small velocities to stop slow drifting when node is not being dragged
       if (this.grabbed) {
-        this.position.add(this.velocity.clone().multiplyScalar(deltaTime));
+        this.position.add(this.velocity.clone().multiplyScalar(this.accruedTime));
       }
       else {
         // Apply stabilising force (to help stop prolonged, slow movement of nodes)
         var vmag = this.velocity.length();
         var vdir = this.velocity.clone().divideScalar(vmag);
-        var negatedVelocity = deltaTime*stabilisingForce;
+        var negatedVelocity = this.accruedTime*stabilisingForce;
         if (vmag > negatedVelocity) {
           vmag -= negatedVelocity;
           // Update position
-          this.position.add(vdir.multiplyScalar(deltaTime*vmag));
+          this.position.add(vdir.multiplyScalar(this.accruedTime*vmag));
         }
         else this.velocity.set(0, 0, 0);
       }
@@ -678,12 +688,17 @@ define(function() {
     // Reset forces
     this.springForces = {};
     this.accel.set(0, 0, 0);
+    this.accruedTime = 0;
+  }
 
-    // Update edges
-    for (var ID in this.edgesToFollowers)
-      this.edgesToFollowers[ID].update();
-    for (var ID in this.edgesToFriends)
-      this.edgesToFriends[ID].update();
+  Node.prototype.updateComponents = function(deltaTime) {
+    if (!this.selected) {
+      // Update edges
+      for (var ID in this.edgesToFollowers)
+        this.edgesToFollowers[ID].update();
+      for (var ID in this.edgesToFriends)
+        this.edgesToFriends[ID].update();
+    }
 
     // Update text bubble
     if (this.textBubble.visible) {
@@ -824,7 +839,7 @@ define(function() {
   // Text bubble-related variables
   var textWidth = 480;
   var textHeight = 64;
-  var textBubbleScale = 0.25;
+  var textBubbleSize = 1/60;
   var textBubbleVerticalDisplacement = 0.7;
 
   /*
@@ -862,13 +877,15 @@ define(function() {
    * be provided as an argument to this function.
    */
   TextBubble.prototype.scaleForDistance = function(distance) {
-    var scale = distance/60;
+    var scale = distance*textBubbleSize;
     this.mesh.scale.set(scale, scale, scale);
     this.mesh.position.set(0, 0.5*dpScale+scale/2, 0.01);
   }
 
   return Node;
 });
+
+
 
 
 
