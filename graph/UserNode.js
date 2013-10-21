@@ -148,17 +148,18 @@ define(function() {
     this.dpMaterial = new THREE.MeshBasicMaterial({map: defaultDisplayPicTexture});
     this.dpMesh = new THREE.Mesh(dpGeometry, this.dpMaterial);
     this.dpOutlineMesh = new THREE.Mesh(dpOutlineGeometry, dpOutlineMat);
-    this.dpOutlineMesh.position.set(0, 0, -0.005);
+    this.dpOutlineMesh.position.set(0, 0, -0.01);
     this.dpMesh.add(this.dpOutlineMesh);
     this.dpBorderMesh = new THREE.Mesh(dpBorderGeometry, dpBorderMat);
-    this.dpBorderMesh.position.set(0, 0, -0.01);
+    this.dpBorderMesh.position.set(0, 0, -0.02);
     this.dpMesh.add(this.dpBorderMesh);
     this.dpBorderOutlineMesh = new THREE.Mesh(dpBorderOutlineGeometry, dpOutlineMat);
-    this.dpBorderOutlineMesh.position.set(0, 0, -0.015);
+    this.dpBorderOutlineMesh.position.set(0, 0, -0.03);
     this.dpBorderOutlineMesh.node = this;
     this.dpMesh.add(this.dpBorderOutlineMesh);
 
     this.textBubble = new TextBubble(this.id);
+    this.scale = 1;
 
     // Associative array to store references to edge objects
     this.edgesToFollowers = {};
@@ -176,7 +177,7 @@ define(function() {
     this.velocity = new THREE.Vector3();
     this.accel = new THREE.Vector3();
     this.springForces = {}; // Associative array to store spring forces during force calculations
-    this.accruedTime = 0;
+    this.accumulatedTime = 0;
   }
 
   Node.nodes = {}; // Dictionary of created nodes
@@ -536,7 +537,7 @@ define(function() {
    * physics update.
    */
   Node.prototype.addTime = function(deltaTime) {
-    this.accruedTime += deltaTime;
+    this.accumulatedTime += deltaTime;
   }
 
   /*
@@ -642,9 +643,9 @@ define(function() {
    * Update the position of the node using the forces calculated in the
    * calculateForces method.
    */
-  Node.prototype.applyForces = function(camera) {
-    if (this.accruedTime > maxPhysicsTimeStep)
-      this.accruedTime = maxPhysicsTimeStep;
+  Node.prototype.applyForces = function() {
+    if (this.accumulatedTime > maxPhysicsTimeStep)
+      this.accumulatedTime = maxPhysicsTimeStep;
 
     // We don't move selected nodes. They become the centre of focus.
     if (!this.selected) {
@@ -665,21 +666,21 @@ define(function() {
         this.accel.multiplyScalar(maxForceMag/forceMag);
       }
       // Update velocity
-      this.velocity.add(this.accel.multiplyScalar(this.accruedTime));
+      this.velocity.add(this.accel.multiplyScalar(this.accumulatedTime));
 
       // Round to zero for very small velocities to stop slow drifting when node is not being dragged
       if (this.grabbed) {
-        this.position.add(this.velocity.clone().multiplyScalar(this.accruedTime));
+        this.position.add(this.velocity.clone().multiplyScalar(this.accumulatedTime));
       }
       else {
         // Apply stabilising force (to help stop prolonged, slow movement of nodes)
         var vmag = this.velocity.length();
         var vdir = this.velocity.clone().divideScalar(vmag);
-        var negatedVelocity = this.accruedTime*stabilisingForce;
+        var negatedVelocity = this.accumulatedTime*stabilisingForce;
         if (vmag > negatedVelocity) {
           vmag -= negatedVelocity;
           // Update position
-          this.position.add(vdir.multiplyScalar(this.accruedTime*vmag));
+          this.position.add(vdir.multiplyScalar(this.accumulatedTime*vmag));
         }
         else this.velocity.set(0, 0, 0);
       }
@@ -688,16 +689,16 @@ define(function() {
     // Reset forces
     this.springForces = {};
     this.accel.set(0, 0, 0);
-    this.accruedTime = 0;
+    this.accumulatedTime = 0;
   }
 
-  Node.prototype.updateComponents = function(deltaTime) {
+  Node.prototype.updateComponents = function(deltaTime, camera, projector) {
     if (!this.selected) {
       // Update edges
       for (var ID in this.edgesToFollowers)
-        this.edgesToFollowers[ID].update();
+        this.edgesToFollowers[ID].update(camera, projector);
       for (var ID in this.edgesToFriends)
-        this.edgesToFriends[ID].update();
+        this.edgesToFriends[ID].update(camera, projector);
     }
 
     // Update text bubble
@@ -764,47 +765,204 @@ define(function() {
     this.grabbed = false;
   }
 
-  var lineMaterial = new THREE.LineBasicMaterial(
-    {color: 0xFFFFFF, vertexColors: THREE.VertexColors}
-  );
+  var edgeMaterial = new THREE.MeshBasicMaterial({side: THREE.DoubleSide, vertexColors: THREE.VertexColors});
 
   /*
    * The Edge object visually depicts a relationship between two nodes.
    */
-  function Edge(follower, followee)
+  function Edge(node1, node2)
   {
-    this.followerNode = follower;
-    this.followeeNode = followee;
+    this.node1 = node1;
+    this.node2 = node2;
+    this.node1EndIsArrow = false;
+    this.node2EndIsArrow = false;
 
-    this.lineGeo = new THREE.Geometry();
-    this.lineGeo.dynamic = true;
-    this.lineGeo.vertices.push(this.followerNode.position);
-    this.lineGeo.vertices.push(this.followeeNode.position);
-    this.lineGeo.colors.push(new THREE.Color(followerColor));
-    this.lineGeo.colors.push(new THREE.Color(friendColor));
-    this.mesh = new THREE.Line(this.lineGeo, lineMaterial);
+    // Mesh stuff
+    this.object = new THREE.Object3D();
+    this.leftArrowHeadGeo = createArrowHead(1);
+    this.rightArrowHeadGeo = createArrowHead(-1);
+    this.leftArrowHeadMesh = new THREE.Mesh(this.leftArrowHeadGeo, edgeMaterial);
+    this.rightArrowHeadMesh = new THREE.Mesh(this.rightArrowHeadGeo, edgeMaterial);
+    this.object.add(this.leftArrowHeadMesh);
+    this.object.add(this.rightArrowHeadMesh);
+    this.middleGeo = new THREE.Geometry();
+    this.middleGeo.vertices.push(new THREE.Vector3(-0.5, -0.25, 0));
+    this.middleGeo.vertices.push(new THREE.Vector3(-0.5, 0.25, 0));
+    this.middleGeo.vertices.push(new THREE.Vector3(0.5, 0.25, 0));
+    this.middleGeo.vertices.push(new THREE.Vector3(0.5, -0.25, 0));
+    this.middleGeo.colors.push();
+    this.middleGeo.colors.push(new THREE.Color(0x00ffff));
+    this.middleGeo.colors.push(new THREE.Color(0xff00ff));
+    this.middleGeo.colors.push(new THREE.Color(0xffffff));
+    this.middleGeo.faces.push(new THREE.Face3(0, 2, 1, new THREE.Vector3(0, 0, 1)));
+    this.middleGeo.faces.push(new THREE.Face3(0, 3, 2, new THREE.Vector3(0, 0, 1)));
+    this.middleGeo.faces[0].vertexColors = [new THREE.Color(0xffff00), new THREE.Color(0x00ffff), new THREE.Color(0xffff00)];
+    this.middleGeo.faces[1].vertexColors = [new THREE.Color(0xffff00), new THREE.Color(0x00ffff), new THREE.Color(0x00ffff)];
+    this.middleMesh = new THREE.Mesh(this.middleGeo, edgeMaterial);
+    this.object.add(this.middleMesh);
+
     this.visible = false;
     this.doubleFollower = false;
+
+    this.setArrowScale(node1, 0.5);
+
+    function createArrowHead(dir) {
+      var geo = new THREE.Geometry();
+      geo.vertices.push(new THREE.Vector3(0, 0, 0));
+      geo.vertices.push(new THREE.Vector3(dir, 0.5, 0));
+      geo.vertices.push(new THREE.Vector3(dir, -0.5, 0));
+      geo.faces[0] = new THREE.Face3(0, 1, 2, new THREE.Vector3(0, 0, 1));
+      geo.faces[0].vertexColors = [new THREE.Color(0xff0000), new THREE.Color(0x00ff00), new THREE.Color(0x0000ff)];
+      return geo;
+    }
   }
+
+  Edge.prototype.setArrow = function(node) {
+    if (node === this.node1) {
+      this.node1EndIsArrow = true;
+    }
+    else if (node === this.node2) {
+      this.node2EndIsArrow = true;
+    }
+    else console.log("Error: node with ID " + node.id + " passed to setArrow() for edge between node " + this.node1.id + " and node " + this.node2.id + ".");
+  }
+
+  Edge.prototype.setArrowScale = function(node, scale) {
+    if (node === this.node1) {
+      this.leftArrowHeadMesh.scale.set(scale, scale, 1);
+      this.middleGeo.vertices[0].y = -0.25*scale;
+      this.middleGeo.vertices[1].y = 0.25*scale;
+      this.middleGeo.verticesNeedUpdate = true;
+    }
+    else if (node === this.node2) {
+      this.rightArrowHeadMesh.scale.set(scale, scale, 1);
+      this.middleGeo.vertices[2].y = 0.25*scale;
+      this.middleGeo.vertices[3].y = -0.25*scale;
+      this.middleGeo.verticesNeedUpdate = true;
+    }
+    else console.log("Error: node with ID " + node.id + " passed to setArrowScale() for edge between node " + this.node1.id + " and node " + this.node2.id + ".");
+  }
+
+  var oneOverSqrtTwo = 1 / Math.sqrt(2);
 
   /*
    * Determine whether the edge should currently be visible and
-   * force an update of the vertex positions of the edge.
+   * update the vertex positions for the edge.
    */
-  Edge.prototype.update = function() {
+  Edge.prototype.update = function(camera, projector) {
     if (this.visible) {
-      if (!this.followerNode.visible || !this.followeeNode.visible) {
-        scene.remove(this.mesh);
+      if (!this.node1.visible || !this.node2.visible) {
+        scene.remove(this.object);
         this.visible = false;
       }
-      else this.lineGeo.verticesNeedUpdate = true;
+      else positionMeshes.call(this);
     }
     else {
-      if (this.followerNode.visible && this.followeeNode.visible) {
-        scene.add(this.mesh);
+      if (this.node1.visible && this.node2.visible) {
+        scene.add(this.object);
         this.visible = true;
-        this.lineGeo.verticesNeedUpdate = true;
+        positionMeshes.call(this);
       }
+    }
+
+    function positionMeshes() {
+      var fullDirVector = this.node2.position.clone().sub(this.node1.position).normalize();
+
+      // The z-distance of the two nodes from the camera
+      var node1ZDist = camera.forward.dot(this.node1.position.clone().sub(camera.position));
+      var node2ZDist = camera.forward.dot(this.node2.position.clone().sub(camera.position));
+
+      // Calculate the position on screen of the nodes that aren't behind the camera
+      if (node1ZDist > camera.near) {
+        // The position of node 1 on the screen
+        var node1Screen = projector.projectVector(this.node1.position.clone(), camera);
+        // The size of node 1 on the screen (half)
+        var node1ScreenHalfSizeY = projector.projectVector(
+          this.node1.position.clone().add(camera.up.clone().multiplyScalar(0.5*this.node1.scale)), camera
+        ).y - node1Screen.y;
+        // A point nearby in the direction of the edge
+        var pointAlongEdge = projector.projectVector(this.node1.position.clone().add(fullDirVector), camera);
+      }
+
+      if (node2ZDist > camera.near) {
+        var node2Screen = projector.projectVector(this.node2.position.clone(), camera);
+        var node2ScreenHalfSizeY = projector.projectVector(
+          this.node2.position.clone().add(camera.up.clone().multiplyScalar(0.5*this.node2.scale)), camera
+        ).y - node2Screen.y;
+        var pointAlongEdge = projector.projectVector(this.node2.position.clone().sub(fullDirVector), camera);
+      }
+
+      // If one of the nodes is in front of the camera, use it to calculate the arrow head displacements
+      if (node1ZDist > camera.near || node2ZDist > camera.near) {
+        // Calculate the direction vector of the edge on the screen
+        var dirVectorScreen;
+        // Choose the node to get the direction vector with
+        // Either will work, as long as the selected node is in front of the camera
+        if (node1ZDist > node2ZDist)
+          dirVectorScreen = pointAlongEdge.sub(node1Screen);
+        else
+          dirVectorScreen = node2Screen.clone().sub(pointAlongEdge);
+        dirVectorScreen.z = 0;
+        dirVectorScreen.normalize();
+
+        // Returns theta between -180 and 180
+        var theta = Math.atan2(dirVectorScreen.y, dirVectorScreen.x);
+        // Find 1st quadrant equivalent for theta
+        if (theta < 0)
+          theta = -theta;
+        if (theta > Math.PI/2)
+          theta = Math.PI - theta;
+
+        // Calculate arrow head displacements
+        var displacementNode1 = 0;
+        var displacementNode2 = 0;
+        // If we're before the 1st corner of the square
+        if (theta < Math.atan(camera.aspect)) {
+          var a = (1/camera.aspect)/Math.cos(theta);
+          displacementNode1 = node1ScreenHalfSizeY*a;
+          displacementNode2 = -node2ScreenHalfSizeY*a;
+        }
+        else {
+          var a = Math.sin(theta);
+          displacementNode1 = node1ScreenHalfSizeY/a;
+          displacementNode2 = -node2ScreenHalfSizeY/a;
+        }
+      }
+
+      // Calculate the displaced arrow head position for each node
+      if (node1ZDist > camera.near) {
+        var node1ScreenMod = node1Screen.add(dirVectorScreen.clone().multiplyScalar(displacementNode1));
+        var leftPoint = projector.unprojectVector(node1ScreenMod, camera);
+      }
+      else var leftPoint = this.node1.position.clone();
+
+      if (node2ZDist > camera.near) {
+        var node2ScreenMod = node2Screen.add(dirVectorScreen.clone().multiplyScalar(displacementNode2));
+        var rightPoint = projector.unprojectVector(node2ScreenMod, camera);
+      }
+      else var rightPoint = this.node2.position.clone();
+
+      var dispVector = rightPoint.clone().sub(leftPoint);
+      var length = dispVector.length();
+      var dirVector = dispVector.clone().divideScalar(length);
+      var centrePosition = leftPoint.clone().add(dispVector.clone().multiplyScalar(0.5));
+      // Vector from the centre of the edge to the centre of the camera
+      var toCameraVector = camera.position.clone().sub(centrePosition);
+      // Find the normal vector of the edge that points closest to the centre of the camera (projection of toCameraVector onto plane of possible normals)
+      var normalVector = toCameraVector.sub(dirVector.clone().multiplyScalar(toCameraVector.dot(dirVector)));
+      printVector(normalVector);
+      // The direction the 'top' of the edge should be facing
+      var upVector = normalVector.clone().cross(dispVector).normalize();
+
+      this.object.position = centrePosition;
+      this.object.up = upVector;
+      this.object.lookAt(centrePosition.clone().add(normalVector));
+
+      this.leftArrowHeadMesh.position = new THREE.Vector3(-0.5*length, 0, 0);
+      this.rightArrowHeadMesh.position = new THREE.Vector3(0.5*length, 0, 0);
+      this.middleMesh.scale.x = this.rightArrowHeadMesh.position.x - this.leftArrowHeadMesh.position.x - this.leftArrowHeadMesh.scale.x - this.rightArrowHeadMesh.scale.x;
+      this.middleMesh.position.x = (this.leftArrowHeadMesh.scale.x - this.rightArrowHeadMesh.scale.x)/2;
+
     }
   }
 
@@ -813,12 +971,14 @@ define(function() {
    * relationship.
    */
   Edge.prototype.colorForDoubleFollower = function() {
+    return;
     this.lineGeo.colors[0].setHex(friendColor);
     this.lineGeo.colorsNeedUpdate = true;
     this.doubleFollower = true;
   }
 
   Edge.prototype.highlight = function() {
+    return;
     this.lineGeo.colors[1].setHex(friendColorHighlighted);
     if (this.doubleFollower)
       this.lineGeo.colors[0].setHex(friendColorHighlighted);
@@ -828,6 +988,7 @@ define(function() {
   }
 
   Edge.prototype.unhighlight = function() {
+    return;
     this.lineGeo.colors[1].setHex(friendColor);
     if (this.doubleFollower)
       this.lineGeo.colors[0].setHex(friendColor);
@@ -879,23 +1040,10 @@ define(function() {
   TextBubble.prototype.scaleForDistance = function(distance) {
     var scale = distance*textBubbleSize;
     this.mesh.scale.set(scale, scale, scale);
-    this.mesh.position.set(0, 0.5*dpScale+scale/2, 0.01);
+    this.mesh.position.set(0, 0.5*dpScale+scale/2, 1);
   }
 
   return Node;
 });
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 

@@ -8,7 +8,7 @@ var usingRift = false;
 var scene;
 var camera;
 var projector = new THREE.Projector();
-var nearClip = 1, farClip = 1000;
+var nearClip = 1, farClip = 500;
 var renderer;
 
 // Variables concerning simulation limits for performance
@@ -82,9 +82,10 @@ function initializeScene()
   document.getElementById("WebGLCanvas").appendChild(renderer.domElement);
 
   scene = new THREE.Scene();
-  scene.fog = new THREE.Fog(0x000000, 90, 100);
+  scene.fog = new THREE.Fog(0x444444, 90, 100);
 
   camera = new THREE.PerspectiveCamera(45, canvasWidth / canvasHeight, nearClip, farClip);
+  camera.matrixAutoUpdate = true;
   camera.position.set(0, 0, 30);
   scene.add(camera);
 
@@ -105,9 +106,7 @@ function initializeScene()
 
 function zDistanceToCamera(position)
 {
-  var intoScreen = new THREE.Vector3(0, 0, 1);
-  projector.unprojectVector(intoScreen, camera);
-  return position.clone().sub(camera.position).dot(intoScreen)/intoScreen.length();
+  return camera.forward.dot(position.clone().sub(camera.position));
 }
 
 function buildGraph()
@@ -336,6 +335,14 @@ function update(deltaTime)
   // Move the camera away from the centroid again
   camera.position.sub(displacement);
 
+  // Apply the changes to the camera
+  camera.updateMatrixWorld(true);
+  // Calculate camera up, forward and right vectors
+  camera.forward = projector.unprojectVector(new THREE.Vector3(0, 0, 0.5), camera).sub(camera.position).normalize();
+  var pos = projector.unprojectVector(new THREE.Vector3(0, 1, 0.5), camera).sub(camera.position);
+  camera.up = pos.sub(camera.forward.clone().multiplyScalar(pos.dot(camera.forward))).normalize();
+  camera.right = camera.forward.clone().cross(camera.up).normalize();
+
   // Update the graph
   var ids = Object.keys(Node.shownNodes);
   if (ids.length > 0) {
@@ -354,21 +361,21 @@ function update(deltaTime)
     n = nextNodeIndexToSimulate;
     while (nodeSimCredit > 0) {
       n = (n+1) % ids.length;
-      Node.shownNodes[ids[n]].applyForces(camera);
+      Node.shownNodes[ids[n]].applyForces();
       --nodeSimCredit;
     }
 
     // Update the components of all nodes (text bubble direction etc)
     for (var i = 0; i < ids.length; ++i)
-      Node.shownNodes[ids[i]].updateComponents(deltaTime);
+      Node.shownNodes[ids[i]].updateComponents(deltaTime, camera, projector);
 
     nextNodeIndexToSimulate = n;
   }
 
   // Set the fog distance
   var distance = zDistanceToCamera(centreOfFocus);
-  scene.fog.near = distance*2;
-  scene.fog.far = distance*2.1 + 1;
+  scene.fog.near = distance;
+  scene.fog.far = distance*3;
 
   Input.reset();
 }
@@ -597,6 +604,8 @@ function main(i, n) {
   timeOfLastFrame = new Date().getTime();
   mainLoop();
 }
+
+
 
 
 
