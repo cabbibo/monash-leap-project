@@ -158,7 +158,7 @@ define(function() {
     this.dpBorderOutlineMesh.node = this;
     this.dpMesh.add(this.dpBorderOutlineMesh);
 
-    this.textBubble = new TextBubble(this.id);
+    this.textBubble = new TextBubble(this);
     this.scale = 1;
 
     // Associative array to store references to edge objects
@@ -224,6 +224,8 @@ define(function() {
     }
     this.object.remove(this.sphereMesh);
     this.object.add(this.dpMesh);
+    this.scale = Math.log(this.profile.followers_count+1)/Math.log(100)+1;
+    this.dpMesh.scale.set(this.scale, this.scale, 1);
     this.textBubble.redraw(this.profile.name);
   }
 
@@ -471,7 +473,7 @@ define(function() {
       // If we already built the friend edge, update the existing edge
       if (this.edgesToFriends[followerID]) {
         this.edgesToFollowers[followerID] = this.edgesToFriends[followerID];
-        this.edgesToFollowers[followerID].colorForDoubleFollower();
+        this.edgesToFollowers[followerID].setArrow(this);
         continue;
       }
 
@@ -486,7 +488,7 @@ define(function() {
         // to reflect that they are also following us
         if (followerNode.edgesToFollowers[this.id]) {
           this.edgesToFollowers[followerID] = followerNode.edgesToFollowers[this.id];
-          this.edgesToFollowers[followerID].colorForDoubleFollower();
+          this.edgesToFollowers[followerID].setArrow(this);
           continue;
         }
       }
@@ -494,6 +496,7 @@ define(function() {
       var edge = new Edge(followerNode, this);
       this.edgesToFollowers[followerID] = edge;
       followerNode.edgesToFriends[this.id] = edge;
+      edge.setArrow(this);
     }
     this.followerEdgesConstructed = followerCount;
 
@@ -505,7 +508,7 @@ define(function() {
       // If we already built the follower edge, update the existing edge
       if (this.edgesToFollowers[friendID]) {
         this.edgesToFriends[friendID] = this.edgesToFollowers[friendID];
-        this.edgesToFriends[friendID].colorForDoubleFollower();
+        this.edgesToFriends[friendID].setArrow(friendNode);
         continue;
       }
 
@@ -520,7 +523,7 @@ define(function() {
         var theirFriends = friendNode.profile.friends;
         if (friendNode.edgesToFriends[this.id]) {
           this.edgesToFriends[friendID] = friendNode.edgesToFriends[this.id];
-          this.edgesToFriends[friendID].colorForDoubleFollower();
+          this.edgesToFriends[friendID].setArrow(friendNode);
           continue;
         }
       }
@@ -528,6 +531,7 @@ define(function() {
       var edge = new Edge(this, friendNode);
       this.edgesToFriends[friendID] = edge;
       friendNode.edgesToFollowers[this.id] = edge;
+      edge.setArrow(friendNode);
     }
     this.friendEdgesConstructed = friendCount;
   }
@@ -589,7 +593,7 @@ define(function() {
         if (node !== this) {
           var displacement = (new THREE.Vector3()).subVectors(node.position, this.position);
           var length = displacement.length();
-          displacement.multiplyScalar(-repulsionStrength/length/length/length);
+          displacement.multiplyScalar(-repulsionStrength*node.scale/length/length/length);
           this.accel.add(displacement);
         }
       }
@@ -766,6 +770,9 @@ define(function() {
   }
 
   var edgeMaterial = new THREE.MeshBasicMaterial({side: THREE.DoubleSide, vertexColors: THREE.VertexColors});
+  var edgeArrowColor = new THREE.Color(0xff0000);
+  var edgeHeadColor = new THREE.Color(0xffff00);
+  var edgeTailColor = new THREE.Color(0x0000ff);
 
   /*
    * The Edge object visually depicts a relationship between two nodes.
@@ -774,8 +781,6 @@ define(function() {
   {
     this.node1 = node1;
     this.node2 = node2;
-    this.node1EndIsArrow = false;
-    this.node2EndIsArrow = false;
 
     // Mesh stuff
     this.object = new THREE.Object3D();
@@ -783,6 +788,8 @@ define(function() {
     this.rightArrowHeadGeo = createArrowHead(-1);
     this.leftArrowHeadMesh = new THREE.Mesh(this.leftArrowHeadGeo, edgeMaterial);
     this.rightArrowHeadMesh = new THREE.Mesh(this.rightArrowHeadGeo, edgeMaterial);
+    this.leftArrowHeadMesh.isArrow = false;
+    this.leftArrowHeadMesh.isArrow = false;
     this.object.add(this.leftArrowHeadMesh);
     this.object.add(this.rightArrowHeadMesh);
     this.middleGeo = new THREE.Geometry();
@@ -790,39 +797,60 @@ define(function() {
     this.middleGeo.vertices.push(new THREE.Vector3(-0.5, 0.25, 0));
     this.middleGeo.vertices.push(new THREE.Vector3(0.5, 0.25, 0));
     this.middleGeo.vertices.push(new THREE.Vector3(0.5, -0.25, 0));
-    this.middleGeo.colors.push();
-    this.middleGeo.colors.push(new THREE.Color(0x00ffff));
-    this.middleGeo.colors.push(new THREE.Color(0xff00ff));
-    this.middleGeo.colors.push(new THREE.Color(0xffffff));
     this.middleGeo.faces.push(new THREE.Face3(0, 2, 1, new THREE.Vector3(0, 0, 1)));
     this.middleGeo.faces.push(new THREE.Face3(0, 3, 2, new THREE.Vector3(0, 0, 1)));
-    this.middleGeo.faces[0].vertexColors = [new THREE.Color(0xffff00), new THREE.Color(0x00ffff), new THREE.Color(0xffff00)];
-    this.middleGeo.faces[1].vertexColors = [new THREE.Color(0xffff00), new THREE.Color(0x00ffff), new THREE.Color(0x00ffff)];
+    this.middleGeo.faces[0].vertexColors = [edgeTailColor, edgeTailColor, edgeTailColor];
+    this.middleGeo.faces[1].vertexColors = [edgeTailColor, edgeTailColor, edgeTailColor];
     this.middleMesh = new THREE.Mesh(this.middleGeo, edgeMaterial);
     this.object.add(this.middleMesh);
 
     this.visible = false;
     this.doubleFollower = false;
 
-    this.setArrowScale(node1, 0.5);
+    this.setArrowScale(node1, 0.25);
+    this.setArrowScale(node2, 0.25);
 
     function createArrowHead(dir) {
       var geo = new THREE.Geometry();
       geo.vertices.push(new THREE.Vector3(0, 0, 0));
-      geo.vertices.push(new THREE.Vector3(dir, 0.5, 0));
-      geo.vertices.push(new THREE.Vector3(dir, -0.5, 0));
+      geo.vertices.push(new THREE.Vector3(dir, 0.2, 0));
+      geo.vertices.push(new THREE.Vector3(dir, -0.2, 0));
       geo.faces[0] = new THREE.Face3(0, 1, 2, new THREE.Vector3(0, 0, 1));
-      geo.faces[0].vertexColors = [new THREE.Color(0xff0000), new THREE.Color(0x00ff00), new THREE.Color(0x0000ff)];
+      geo.faces[0].vertexColors = [edgeTailColor, edgeTailColor, edgeTailColor];
       return geo;
     }
   }
 
   Edge.prototype.setArrow = function(node) {
     if (node === this.node1) {
-      this.node1EndIsArrow = true;
+      var geo = this.leftArrowHeadGeo;
+      geo.vertices[1].y = 0.5;
+      geo.vertices[2].y = -0.5;
+      for (var i = 0; i < 3; ++i)
+        geo.faces[0].vertexColors[i] = edgeArrowColor;
+      geo.verticesNeedUpdate = true;
+      geo.colorsNeedUpdate = true;
+      this.leftArrowHeadMesh.isArrow = true;
+      var faces = this.middleGeo.faces;
+      faces[0].vertexColors[0] = edgeHeadColor;
+      faces[0].vertexColors[2] = edgeHeadColor;
+      faces[1].vertexColors[0] = edgeHeadColor;
+      this.middleGeo.colorsNeedUpdate = true;
     }
     else if (node === this.node2) {
-      this.node2EndIsArrow = true;
+      var geo = this.rightArrowHeadGeo;
+      geo.vertices[1].y = 0.5;
+      geo.vertices[2].y = -0.5;
+      for (var i = 0; i < 3; ++i)
+        geo.faces[0].vertexColors[i] = edgeArrowColor;
+      geo.verticesNeedUpdate = true;
+      geo.colorsNeedUpdate = true;
+      this.rightArrowHeadMesh.isArrow = true;
+      var faces = this.middleGeo.faces;
+      faces[0].vertexColors[1] = edgeHeadColor;
+      faces[1].vertexColors[1] = edgeHeadColor;
+      faces[1].vertexColors[2] = edgeHeadColor;
+      this.middleGeo.colorsNeedUpdate = true;
     }
     else console.log("Error: node with ID " + node.id + " passed to setArrow() for edge between node " + this.node1.id + " and node " + this.node2.id + ".");
   }
@@ -830,14 +858,14 @@ define(function() {
   Edge.prototype.setArrowScale = function(node, scale) {
     if (node === this.node1) {
       this.leftArrowHeadMesh.scale.set(scale, scale, 1);
-      this.middleGeo.vertices[0].y = -0.25*scale;
-      this.middleGeo.vertices[1].y = 0.25*scale;
+      this.middleGeo.vertices[0].y = -0.2*scale;
+      this.middleGeo.vertices[1].y = 0.2*scale;
       this.middleGeo.verticesNeedUpdate = true;
     }
     else if (node === this.node2) {
       this.rightArrowHeadMesh.scale.set(scale, scale, 1);
-      this.middleGeo.vertices[2].y = 0.25*scale;
-      this.middleGeo.vertices[3].y = -0.25*scale;
+      this.middleGeo.vertices[2].y = 0.2*scale;
+      this.middleGeo.vertices[3].y = -0.2*scale;
       this.middleGeo.verticesNeedUpdate = true;
     }
     else console.log("Error: node with ID " + node.id + " passed to setArrowScale() for edge between node " + this.node1.id + " and node " + this.node2.id + ".");
@@ -950,7 +978,6 @@ define(function() {
       var toCameraVector = camera.position.clone().sub(centrePosition);
       // Find the normal vector of the edge that points closest to the centre of the camera (projection of toCameraVector onto plane of possible normals)
       var normalVector = toCameraVector.sub(dirVector.clone().multiplyScalar(toCameraVector.dot(dirVector)));
-      printVector(normalVector);
       // The direction the 'top' of the edge should be facing
       var upVector = normalVector.clone().cross(dispVector).normalize();
 
@@ -962,19 +989,7 @@ define(function() {
       this.rightArrowHeadMesh.position = new THREE.Vector3(0.5*length, 0, 0);
       this.middleMesh.scale.x = this.rightArrowHeadMesh.position.x - this.leftArrowHeadMesh.position.x - this.leftArrowHeadMesh.scale.x - this.rightArrowHeadMesh.scale.x;
       this.middleMesh.position.x = (this.leftArrowHeadMesh.scale.x - this.rightArrowHeadMesh.scale.x)/2;
-
     }
-  }
-
-  /*
-   * Alter the colours of the edge to reflect the double following
-   * relationship.
-   */
-  Edge.prototype.colorForDoubleFollower = function() {
-    return;
-    this.lineGeo.colors[0].setHex(friendColor);
-    this.lineGeo.colorsNeedUpdate = true;
-    this.doubleFollower = true;
   }
 
   Edge.prototype.highlight = function() {
@@ -1006,8 +1021,9 @@ define(function() {
   /*
    * The TextBubble object displays a user's name on a label in 3D space.
    */
-  function TextBubble(text)
+  function TextBubble(node)
   {
+    this.node = node;
     this.visible = false;
     this.texture = new THREE.Texture(drawingCanvas);
     this.material = new THREE.MeshBasicMaterial({map: this.texture});
@@ -1016,7 +1032,6 @@ define(function() {
       new THREE.PlaneGeometry(textWidth/textHeight, 1),
       this.material
     );
-    this.text = text;
   }
 
   TextBubble.prototype.redraw = function(text) {
@@ -1040,7 +1055,7 @@ define(function() {
   TextBubble.prototype.scaleForDistance = function(distance) {
     var scale = distance*textBubbleSize;
     this.mesh.scale.set(scale, scale, scale);
-    this.mesh.position.set(0, 0.5*dpScale+scale/2, 1);
+    this.mesh.position.set(0, 0.5*this.node.scale+scale/2, 1);
   }
 
   return Node;
