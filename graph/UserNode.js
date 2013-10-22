@@ -27,9 +27,24 @@ define(function() {
         profileFetched(null);
       }
       else {
-        var profile = JSON.parse(user.profile);
-        profile.followers = user.followers;
-        profile.friends = user.friends;
+        try {
+          var profile = JSON.parse(user.profile);
+          profile.followers = user.followers;
+          profile.friends = user.friends;
+
+          if (user.timeline)
+            profile.timeline = JSON.parse(user.timeline);
+          else
+            profile.timeline = [];
+
+          if (user.favorites)
+            profile.favorites = JSON.parse(user.favorites);
+          else
+            profile.favorites = [];
+        }
+        catch (e) {
+          console.log(e);
+        }
         profileFetched(profile);
       }
     });
@@ -45,9 +60,24 @@ define(function() {
         profileFetched(null);
       }
       else {
-        var profile = JSON.parse(user.profile);
-        profile.followers = user.followers;
-        profile.friends = user.friends;
+        try {
+          var profile = JSON.parse(user.profile);
+          profile.followers = user.followers;
+          profile.friends = user.friends;
+
+          if (user.timeline)
+            profile.timeline = JSON.parse(user.timeline);
+          else
+            profile.timeline = [];
+
+          if (user.favorites)
+            profile.favorites = JSON.parse(user.favorites);
+          else
+            profile.favorites = [];
+        }
+        catch (e) {
+          console.log(e);
+        }
         profileFetched(profile);
       }
     });
@@ -474,6 +504,7 @@ define(function() {
       if (this.edgesToFriends[followerID]) {
         this.edgesToFollowers[followerID] = this.edgesToFriends[followerID];
         this.edgesToFollowers[followerID].setArrow(this);
+        this.edgesToFollowers[followerID].setArrowScale(this, calcArrowScaleFromInfluence(followerNode, this));
         continue;
       }
 
@@ -481,6 +512,7 @@ define(function() {
         // If the follower node already has a friend edge connected to us, keep the existing edge
         if (followerNode.edgesToFriends[this.id]) {
           this.edgesToFollowers[followerID] = followerNode.edgesToFriends[this.id];
+          this.edgesToFollowers[followerID].setArrowScale(this, calcArrowScaleFromInfluence(followerNode, this));
           continue ;
         }
 
@@ -489,6 +521,7 @@ define(function() {
         if (followerNode.edgesToFollowers[this.id]) {
           this.edgesToFollowers[followerID] = followerNode.edgesToFollowers[this.id];
           this.edgesToFollowers[followerID].setArrow(this);
+          this.edgesToFollowers[followerID].setArrowScale(this, calcArrowScaleFromInfluence(followerNode, this));
           continue;
         }
       }
@@ -497,6 +530,7 @@ define(function() {
       this.edgesToFollowers[followerID] = edge;
       followerNode.edgesToFriends[this.id] = edge;
       edge.setArrow(this);
+      edge.setArrowScale(this, calcArrowScaleFromInfluence(followerNode, this));
     }
     this.followerEdgesConstructed = followerCount;
 
@@ -509,6 +543,7 @@ define(function() {
       if (this.edgesToFollowers[friendID]) {
         this.edgesToFriends[friendID] = this.edgesToFollowers[friendID];
         this.edgesToFriends[friendID].setArrow(friendNode);
+        this.edgesToFriends[friendID].setArrowScale(friendNode, calcArrowScaleFromInfluence(this, friendNode));
         continue;
       }
 
@@ -516,6 +551,7 @@ define(function() {
         // If the friend node already has a follower edge connected to us, keep the existing edge
         if (friendNode.edgesToFollowers[this.id]) {
           this.edgesToFriends[friendID] = friendNode.edgesToFollowers[this.id];
+          this.edgesToFriends[friendID].setArrowScale(friendNode, calcArrowScaleFromInfluence(this, friendNode));
           continue;
         }
         // If the friend node already has a friend edge connected to us, update the existing edge
@@ -524,6 +560,7 @@ define(function() {
         if (friendNode.edgesToFriends[this.id]) {
           this.edgesToFriends[friendID] = friendNode.edgesToFriends[this.id];
           this.edgesToFriends[friendID].setArrow(friendNode);
+          this.edgesToFriends[friendID].setArrowScale(friendNode, calcArrowScaleFromInfluence(this, friendNode));
           continue;
         }
       }
@@ -532,9 +569,102 @@ define(function() {
       this.edgesToFriends[friendID] = edge;
       friendNode.edgesToFollowers[this.id] = edge;
       edge.setArrow(friendNode);
+      edge.setArrowScale(friendNode, calcArrowScaleFromInfluence(this, friendNode));
     }
     this.friendEdgesConstructed = friendCount;
   }
+
+  function calcArrowScaleFromInfluence(onUser, fromUser) {
+    return Math.log(influenceCalcLogTranslation + arrowScalingFromInfluence*calculateInfluence(onUser, fromUser));
+  }
+
+  /*
+   * Calculate the influence of the second user on the first user and return
+   * a percentage score (0% - 100%).
+   */
+  function calculateInfluence(onUser, fromUser) {
+    if (!onUser.profile || !fromUser.profile) return 0;
+		var tweetMentions = 0;
+		var tweetFavorites = 0;
+		var infPercentage = 0.0;
+		var yesNotifications = false;
+
+		var fromUserScreenName = fromUser.profile.screen_name;
+
+    /*
+		if(X1isCenter && onUser.centralUser == true){
+			yesNotifications = true;
+			if(userX2.notifications != null && userX2.notifications == true)
+				infPrecetage += 0.15;
+		}
+    */
+
+		tweetMentions = countMentions(onUser, fromUserScreenName);
+		tweetFavorites = countFavorites(onUser, fromUserScreenName);
+		infPercentage += calculatePercentage(tweetMentions, tweetFavorites, onUser, yesNotifications);
+    // If half a user's activity is about one person, consider it maximum influence
+    infPercentage *= 2;
+    if (infPercentage > 1)
+      infPercentage = 1;
+    if (infPercentage > 0)
+      console.log(infPercentage);
+		return infPercentage;
+	}
+
+	/*
+	 * Counts and returns the number of mentions and replies the first user's tweets
+   * contain of the second user.
+	 */
+	function countMentions(onUser, fromUserScreenName){
+		var tweetMentions = 0;
+		var tweets = onUser.profile.timeline;
+
+		for(var i = 0; i < tweets.length; ++i) {
+			// Check if the tweet is in reply to the target user
+			if (tweets[i].in_reply_to_screen_name === fromUserScreenName) {
+				++tweetMentions;
+      }
+			// Check if the tweet mentions the target user
+			else if (tweets[i].entities) {
+				var mentions = tweets[i].entities.user_mentions;
+				if(mentions) {
+					for (var j = 0; j < mentions.length; ++j) {
+						if (mentions[j].screen_name === fromUserScreenName) {
+							++tweetMentions;
+              break;
+            }
+          }
+				}
+			}
+		}
+
+		return tweetMentions;
+	}
+
+	/*
+	 * Counts and returns the number of tweets of the second user that the first user
+   * has favourited.
+	 */
+	function countFavorites(onUser, fromUserScreenName) {
+		var tweetFavorites = 0;
+		var favourites = onUser.profile.favorites;
+
+		for (var i = 0; i < favourites.length; ++i)
+			if (favourites[i].user && favourites[i].user.screen_name === fromUserScreenName)
+				++tweetFavorites;
+
+		return tweetFavorites;
+	}
+
+	function calculatePercentage(tweetMentions, tweetFavourites, onUser, yesNotifications) {
+    var tweetPercentInf = (tweetMentions > 0) ? tweetMentions/onUser.profile.timeline.length : 0;
+    var favoritePercentInf = (tweetFavourites > 0) ? tweetFavourites/onUser.profile.favorites.length : 0;
+
+		if(yesNotifications)
+			return tweetPercentInf*0.6375+favoritePercentInf*0.2125;
+		else
+			return tweetPercentInf*0.75+favoritePercentInf*0.25;
+	}
 
   /*
    * This function allows a node to keep track of how much time has passed since its last
@@ -770,9 +900,17 @@ define(function() {
   }
 
   var edgeMaterial = new THREE.MeshBasicMaterial({side: THREE.DoubleSide, vertexColors: THREE.VertexColors});
-  var edgeArrowColor = new THREE.Color(0xff0000);
-  var edgeHeadColor = new THREE.Color(0xffff00);
-  var edgeTailColor = new THREE.Color(0x0000ff);
+  //var edgeArrowColor = new THREE.Color(0xffffff);
+  var edgeHeadColorBase = new THREE.Color();
+  edgeHeadColorBase.setRGB(1, 0, 0);
+  var edgeHeadColorBright = new THREE.Color();
+  edgeHeadColorBright.setRGB(1, 1, 0);
+  var edgeTailColor = new THREE.Color();
+  edgeTailColor.setRGB(0.5, 0, 1);
+  var minArrowScale = 0.25;
+  var influenceCalcLogTranslation = Math.pow(Math.E, minArrowScale);
+  var arrowScalingFromInfluence = 1.5;
+  var maxArrowScale = Math.log(influenceCalcLogTranslation + arrowScalingFromInfluence);
 
   /*
    * The Edge object visually depicts a relationship between two nodes.
@@ -807,8 +945,8 @@ define(function() {
     this.visible = false;
     this.doubleFollower = false;
 
-    this.setArrowScale(node1, 0.25);
-    this.setArrowScale(node2, 0.25);
+    this.setArrowScale(node1, minArrowScale);
+    this.setArrowScale(node2, minArrowScale);
 
     function createArrowHead(dir) {
       var geo = new THREE.Geometry();
@@ -826,49 +964,79 @@ define(function() {
       var geo = this.leftArrowHeadGeo;
       geo.vertices[1].y = 0.5;
       geo.vertices[2].y = -0.5;
-      for (var i = 0; i < 3; ++i)
-        geo.faces[0].vertexColors[i] = edgeArrowColor;
       geo.verticesNeedUpdate = true;
-      geo.colorsNeedUpdate = true;
       this.leftArrowHeadMesh.isArrow = true;
-      var faces = this.middleGeo.faces;
-      faces[0].vertexColors[0] = edgeHeadColor;
-      faces[0].vertexColors[2] = edgeHeadColor;
-      faces[1].vertexColors[0] = edgeHeadColor;
-      this.middleGeo.colorsNeedUpdate = true;
+      this.updateLeftColors();
     }
     else if (node === this.node2) {
       var geo = this.rightArrowHeadGeo;
       geo.vertices[1].y = 0.5;
       geo.vertices[2].y = -0.5;
-      for (var i = 0; i < 3; ++i)
-        geo.faces[0].vertexColors[i] = edgeArrowColor;
       geo.verticesNeedUpdate = true;
-      geo.colorsNeedUpdate = true;
       this.rightArrowHeadMesh.isArrow = true;
-      var faces = this.middleGeo.faces;
-      faces[0].vertexColors[1] = edgeHeadColor;
-      faces[1].vertexColors[1] = edgeHeadColor;
-      faces[1].vertexColors[2] = edgeHeadColor;
-      this.middleGeo.colorsNeedUpdate = true;
+      this.updateRightColors();
     }
     else console.log("Error: node with ID " + node.id + " passed to setArrow() for edge between node " + this.node1.id + " and node " + this.node2.id + ".");
   }
 
   Edge.prototype.setArrowScale = function(node, scale) {
     if (node === this.node1) {
+      // Update scale
       this.leftArrowHeadMesh.scale.set(scale, scale, 1);
       this.middleGeo.vertices[0].y = -0.2*scale;
       this.middleGeo.vertices[1].y = 0.2*scale;
       this.middleGeo.verticesNeedUpdate = true;
+      this.updateLeftColors();
     }
     else if (node === this.node2) {
+      // Update scale
       this.rightArrowHeadMesh.scale.set(scale, scale, 1);
       this.middleGeo.vertices[2].y = 0.2*scale;
       this.middleGeo.vertices[3].y = -0.2*scale;
       this.middleGeo.verticesNeedUpdate = true;
+      this.updateRightColors();
     }
     else console.log("Error: node with ID " + node.id + " passed to setArrowScale() for edge between node " + this.node1.id + " and node " + this.node2.id + ".");
+  }
+
+  Edge.prototype.updateLeftColors = function()
+  {
+    if (this.leftArrowHeadMesh.isArrow) {
+      var scale = this.leftArrowHeadMesh.scale.x;
+      var color = edgeHeadColorBase.clone();
+      color.lerp(edgeHeadColorBright, (scale - minArrowScale) / (maxArrowScale-minArrowScale));
+
+      var geo = this.leftArrowHeadGeo;
+      for (var i = 0; i < 3; ++i)
+        geo.faces[0].vertexColors[i] = color;
+      geo.colorsNeedUpdate = true;
+
+      var faces = this.middleGeo.faces;
+      faces[0].vertexColors[0] = color;
+      faces[0].vertexColors[2] = color;
+      faces[1].vertexColors[0] = color;
+      this.middleGeo.colorsNeedUpdate = true;
+    }
+  }
+
+  Edge.prototype.updateRightColors = function()
+  {
+    if (this.rightArrowHeadMesh.isArrow) {
+      var scale = this.rightArrowHeadMesh.scale.x;
+      var color = edgeHeadColorBase.clone();
+      color.lerp(edgeHeadColorBright, (scale - minArrowScale) / (maxArrowScale-minArrowScale));
+
+      var geo = this.rightArrowHeadGeo;
+      for (var i = 0; i < 3; ++i)
+        geo.faces[0].vertexColors[i] = color;
+      geo.colorsNeedUpdate = true;
+
+      var faces = this.middleGeo.faces;
+      faces[0].vertexColors[1] = color;
+      faces[1].vertexColors[1] = color;
+      faces[1].vertexColors[2] = color;
+      this.middleGeo.colorsNeedUpdate = true;
+    }
   }
 
   var oneOverSqrtTwo = 1 / Math.sqrt(2);
@@ -1060,5 +1228,7 @@ define(function() {
 
   return Node;
 });
+
+
 
 
