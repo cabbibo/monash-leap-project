@@ -113,7 +113,8 @@ function buildGraph()
 {
   Node.newNodeLoadedFromScreenName("PootPooter", function(node) {
     if (node) {
-      node.showNode();
+      node.requestShow();
+      node.requestShow();
       select(node);
     }
     else console.log("Failed to load starting user!");
@@ -147,10 +148,10 @@ function update(deltaTime)
   Input.update();
 
   if (Input.keyboard.keyPressed['1'])
-    selectedNode.showNeighbourProfiles();
+    selectedNode.expand();
 
   if (Input.keyboard.keyPressed['2'])
-    selectedNode.hideNeighbourProfiles();
+    selectedNode.collapse();
 
   // Execute coroutines
   for (var i = 0; i < coroutines.length;) {
@@ -345,32 +346,41 @@ function update(deltaTime)
 
   // Update the graph
   var ids = Object.keys(Node.shownNodes);
-  if (ids.length > 0) {
-    for (var i = 0; i < ids.length; ++i)
-      Node.shownNodes[ids[i]].addTime(deltaTime);
+  var numNodes = ids.length;
 
-    // Do a physics update for as many nodes as we have an allowance for
-    var nodeSimCredit = nodeSimCreditPerFrame;
-    var n = nextNodeIndexToSimulate;
-    while (nodeSimCredit > 0) {
-      n = (n+1) % ids.length;
-      Node.shownNodes[ids[n]].calculateForces();
-      --nodeSimCredit;
-    }
-    nodeSimCredit = nodeSimCreditPerFrame;
-    n = nextNodeIndexToSimulate;
-    while (nodeSimCredit > 0) {
-      n = (n+1) % ids.length;
-      Node.shownNodes[ids[n]].applyForces();
-      --nodeSimCredit;
-    }
+  for (var id in Node.shownNodes)
+    Node.shownNodes[id].addTime(deltaTime);
 
-    // Update the components of all nodes (text bubble direction etc)
-    for (var i = 0; i < ids.length; ++i)
-      Node.shownNodes[ids[i]].updateComponents(deltaTime, camera, projector);
-
-    nextNodeIndexToSimulate = n;
+  // Do a physics update for as many nodes as we have an allowance for
+  var nodeSimCredit = nodeSimCreditPerFrame;
+  var n = nextNodeIndexToSimulate;
+  var nodesLeft = numNodes;
+  while (nodesLeft > 0 && nodeSimCredit > 0) {
+    n = (n+1) % ids.length;
+    Node.shownNodes[ids[n]].calculateForces();
+    --nodesLeft;
+    --nodeSimCredit;
   }
+  nodeSimCredit = nodeSimCreditPerFrame;
+  n = nextNodeIndexToSimulate;
+  nodesLeft = numNodes;
+  while (nodesLeft > 0 && nodeSimCredit > 0) {
+    n = (n+1) % ids.length;
+    Node.shownNodes[ids[n]].applyForces();
+    --nodesLeft;
+    --nodeSimCredit;
+  }
+
+  // Update the components of all nodes (text bubble direction etc)
+  for (var id in Node.shownNodes)
+    Node.shownNodes[id].updateComponents(deltaTime, camera, projector);
+
+  // Update the edges
+  for (var i = 0; i < Node.edges.length; ++i) {
+    Node.edges[i].update(camera, projector);
+  }
+
+  nextNodeIndexToSimulate = n;
 
   // Set the fog distance
   var distance = zDistanceToCamera(centreOfFocus);
@@ -532,7 +542,6 @@ function select(node)
 
   selectedNode = node;
   node.select();
-  node.showProfile();
 }
 
 function grab(node)
@@ -604,6 +613,8 @@ function main(i, n) {
   timeOfLastFrame = new Date().getTime();
   mainLoop();
 }
+
+
 
 
 

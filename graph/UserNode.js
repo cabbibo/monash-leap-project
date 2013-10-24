@@ -29,22 +29,40 @@ define(function() {
       else {
         try {
           var profile = JSON.parse(user.profile);
-          profile.followers = user.followers;
-          profile.friends = user.friends;
-
-          if (user.timeline)
-            profile.timeline = JSON.parse(user.timeline);
-          else
-            profile.timeline = [];
-
-          if (user.favorites)
-            profile.favorites = JSON.parse(user.favorites);
-          else
-            profile.favorites = [];
-        }
-        catch (e) {
+        } catch (e) {
           console.log(e);
+          profileFetched(null);
+          return;
         }
+        profile.followers = user.followers;
+        profile.friends = user.friends;
+
+        if (user.timeline) {
+          try {
+            profile.timeline = JSON.parse(user.timeline);
+          }
+          catch (e) {
+            console.log(e);
+            profile.timeline = [];
+          }
+        }
+        else {
+          profile.timeline = [];
+        }
+
+        if (user.favorites) {
+          try {
+            profile.favorites = JSON.parse(user.favorites);
+          }
+          catch (e) {
+            console.log(e);
+            profile.favorites = [];
+          }
+        }
+        else {
+          profile.favorites = [];
+        }
+
         profileFetched(profile);
       }
     });
@@ -62,22 +80,40 @@ define(function() {
       else {
         try {
           var profile = JSON.parse(user.profile);
-          profile.followers = user.followers;
-          profile.friends = user.friends;
-
-          if (user.timeline)
-            profile.timeline = JSON.parse(user.timeline);
-          else
-            profile.timeline = [];
-
-          if (user.favorites)
-            profile.favorites = JSON.parse(user.favorites);
-          else
-            profile.favorites = [];
-        }
-        catch (e) {
+        } catch (e) {
           console.log(e);
+          profileFetched(null);
+          return;
         }
+        profile.followers = user.followers;
+        profile.friends = user.friends;
+
+        if (user.timeline) {
+          try {
+            profile.timeline = JSON.parse(user.timeline);
+          }
+          catch (e) {
+            console.log(e);
+            profile.timeline = [];
+          }
+        }
+        else {
+          profile.timeline = [];
+        }
+
+        if (user.favorites) {
+          try {
+            profile.favorites = JSON.parse(user.favorites);
+          }
+          catch (e) {
+            console.log(e);
+            profile.favorites = [];
+          }
+        }
+        else {
+          profile.favorites = [];
+        }
+
         profileFetched(profile);
       }
     });
@@ -93,8 +129,6 @@ define(function() {
         var node = new Node(profile.id);
         node.profile = profile;
         node.profileLoadAttempted = true;
-        node.profileLoaded = true;
-        node.setToShowProfileAppearance();
         profileLoaded(node);
       }
       else {
@@ -105,22 +139,17 @@ define(function() {
   }
 
   // Graph physics variables
-  var springRestLength = 10;
-  var springK = 10;
-  var repulsionStrength = 2000;
-  var dragConstant = 0.2; // Drag forces
+  var springRestLength = 14;
+  var springK = 250;
+  var repulsionStrength = 5000;
+  var dragConstant = 2; // Drag forces
   var pointerDragForce = 20; // Force with which nodes are dragged by the user
-  var maxPointerDragAccel = 8000;
-  var stabilisingForce = 50; // Constant force applied to all nodes to stop slow movements
-  var maxForceMag = 500; // The maximum net force that will be applied to a node in a frame
+  var maxPointerDragForce = 8000;
+  var stabilisingDeceleration = 0; // Constant deceleration applied to all nodes to stop slow movements
+  var maxForceMag = 5000; // The maximum net force that will be applied to a node in a frame
   var maxPhysicsTimeStep = 1/50; // The maxmimum about of time a single step of simulation can be
 
   // Variables for node models
-  var sphereRadius = 0.5;
-  var sphereSegments = 16;
-  var sphereRings = 16;
-  var sphereGeometry = new THREE.SphereGeometry(sphereRadius, sphereSegments, sphereRings);
-
   var dpScale = 0.82; // The size of the display pic with respect to the size of the border
   var dpOutlineScale = 0.86;
   var dpBorderScale = 0.96;
@@ -129,16 +158,23 @@ define(function() {
   var dpBorderGeometry = new THREE.PlaneGeometry(dpBorderScale, dpBorderScale, 1, 1);
   var dpBorderOutlineGeometry = new THREE.PlaneGeometry(1, 1, 1, 1);
 
-  var sphereMat = new THREE.MeshLambertMaterial({color: 0x888888});
-  var highlightedSphereMat = new THREE.MeshLambertMaterial({color: 0xFF8800});
-  var selectedSphereMat = new THREE.MeshLambertMaterial({color: 0x77FF77});
-
   var dpOutlineMat = new THREE.MeshBasicMaterial({color: 0x000000});
   var dpBorderMat = new THREE.MeshBasicMaterial({color: 0x666666});
   var highlightedDPBorderMat = new THREE.MeshBasicMaterial({color: 0xFF8800});
   var selectedDPBorderMat = new THREE.MeshBasicMaterial({color: 0x77FF77});
 
   var defaultDisplayPicTexture = THREE.ImageUtils.loadTexture("defaultProfilePic.png");
+
+  /*
+  var sphereRadius = 0.5;
+  var sphereSegments = 16;
+  var sphereRings = 16;
+  var sphereGeometry = new THREE.SphereGeometry(sphereRadius, sphereSegments, sphereRings);
+
+  var sphereMat = new THREE.MeshLambertMaterial({color: 0x888888});
+  var highlightedSphereMat = new THREE.MeshLambertMaterial({color: 0xFF8800});
+  var selectedSphereMat = new THREE.MeshLambertMaterial({color: 0x77FF77});
+  */
 
   // Colourings for edges
   var followerColor = 0x5555FF;
@@ -161,22 +197,24 @@ define(function() {
 
     this.profile = null;
     this.profileLoadAttempted = false; // Flag to only try loading a profile once
-    this.profileLoaded = false;
-    this.showNodeCount = 0; // The net number of requests to display the node
-    this.showProfileCount = 0; // The net number of requests to show the node's profile
+    this.showCount = 0; // The net number of requests to display the node
     this.highlighted = false;
     this.selected = false;
     this.grabbed = false;
     this.visible = false;
+    this.hasBeenShown = false;
+    this.expanded = false;
+
+    // Functions to be called when this node's profile is loaded
+    this.onLoadFuncs = [];
+    this.onLoadArgs = [];
 
     // The base object which controls the position of the node and to which all other objects are attached
     this.object = new THREE.Object3D();
-    this.sphereMesh = new THREE.Mesh(sphereGeometry, sphereMat);
-    this.sphereMesh.node = this;
-    this.object.add(this.sphereMesh);
 
     this.dpMaterial = new THREE.MeshBasicMaterial({map: defaultDisplayPicTexture});
     this.dpMesh = new THREE.Mesh(dpGeometry, this.dpMaterial);
+    this.object.add(this.dpMesh);
     this.dpOutlineMesh = new THREE.Mesh(dpOutlineGeometry, dpOutlineMat);
     this.dpOutlineMesh.position.set(0, 0, -0.01);
     this.dpMesh.add(this.dpOutlineMesh);
@@ -202,10 +240,11 @@ define(function() {
     this.numShownFollowerProfiles = 0;
     this.numShownFriendProfiles = 0;
 
+    this.mass = 1;
     this.position = this.object.position;
     this.position.set(0, 0, -10);
     this.velocity = new THREE.Vector3();
-    this.accel = new THREE.Vector3();
+    this.netForce = new THREE.Vector3();
     this.springForces = {}; // Associative array to store spring forces during force calculations
     this.accumulatedTime = 0;
   }
@@ -218,53 +257,24 @@ define(function() {
   }
 
   /*
-   * This function is called when a node is to be shown. We don't want to see the node
-   * unless more than one show call has been made, since we're not interested in displaying
-   * nodes with only one neighbour and without profiles. A second show call will be made
-   * if a second node is interested in this node or if the node's profile has been asked
-   * to display.
+   * Request that the node be shown. The node will only be shown after 2 requests.
    */
-  Node.prototype.showNode = function() {
-    ++this.showNodeCount;
-    if (this.showNodeCount === 2) {
-      scene.add(this.object);
-      this.visible = true;
-      Node.shownNodes[this.id] = this;
-    }
-  }
-
-  Node.prototype.hideNode = function() {
-    if (this.showNodeCount === 0) return;
-    if (--this.showNodeCount === 1) {
-      scene.remove(this.object);
-      this.visible = false;
-      Node.shownNodes[this.id] = undefined;
+  Node.prototype.requestShow = function() {
+    ++this.showCount;
+    if (this.showCount === 2) {
+      // If we've reached the required number of requests, attempt to show the node.
+      this.tryShow();
     }
   }
 
   /*
-   * Adjust this node's appearance so that it displays the user's name and profile image.
+   * Request that the node be hidden.
    */
-  Node.prototype.setToShowProfileAppearance = function() {
-    // If the profile hasn't been loaded before, we're not testing locally,
-    // and the profile image URL exists, fetch the profile image
-    if (!this.profileLoaded && !localFetch && this.profile.profile_image_url) {
-      this.dpMaterial.map = THREE.ImageUtils.loadTexture(this.profile.profile_image_url);
-      this.dpMaterial.needsUpdate = true;
+  Node.prototype.requestHide = function() {
+    if (this.showCount === 0) return;
+    if (--this.showCount === 1) {
+      this.tryHide();
     }
-    this.object.remove(this.sphereMesh);
-    this.object.add(this.dpMesh);
-    this.scale = Math.log(this.profile.followers_count+1)/Math.log(100)+1;
-    this.dpMesh.scale.set(this.scale, this.scale, 1);
-    this.textBubble.redraw(this.profile.name);
-  }
-
-  /*
-   * Hide this node's profile image and return it to the sphere appearance.
-   */
-  Node.prototype.setToHideProfileAppearance = function() {
-    this.object.remove(this.dpMesh);
-    this.object.add(this.sphereMesh);
   }
 
   /*
@@ -273,54 +283,90 @@ define(function() {
    * that the profile remains shown until all the nodes that asked for it to be shown
    * ask for it to be hidden again.
    */
-  Node.prototype.showProfile = function(followerCount, friendCount) {
-    ++this.showProfileCount;
-    this.showNode();
-    if (this.showProfileCount === 1) {
-      // If we've tried to load the profile before, don't try again
-      if (this.profileLoadAttempted) {
-        if (this.profileLoaded)
-          this.setToShowProfileAppearance();
-        this.showNeighbours(followerCount, friendCount);
-      }
-      else {
-        // Fetch the profile and then show it
-        this.willBeShown = true;
-        var me = this;
-        fetchProfileByID(this.id, function(profile) {
-          me.profileLoadAttempted = true;
-          if (profile) {
-            me.profile = profile;
-            // Before showing the profile, ensure that something didn't request the
-            // profile to be hidden again in the meantime
-            if (me.willBeShown) {
-              me.setToShowProfileAppearance();
-              me.showNeighbours(followerCount, friendCount);
-              me.willBeShown = false;
-            }
-            me.profileLoaded = true;
+  Node.prototype.tryShow = function(followerCount, friendCount) {
+    // If we've tried to load the profile before, don't try again
+    if (this.profileLoadAttempted) {
+      if (this.profile)
+        this.show();
+      this.requestShowNeighbours(followerCount, friendCount);
+    }
+    else {
+      // Fetch the profile and then show it
+      this.willBeShown = true;
+      var me = this;
+      fetchProfileByID(this.id, function(profile) {
+        me.profileLoadAttempted = true;
+        if (profile) {
+          me.profile = profile;
+          me.makeLoadedCallbacks();
+          // Before showing the profile, ensure that something didn't request the
+          // profile to be hidden again in the meantime
+          if (me.willBeShown) {
+            me.show();
+            me.requestShowNeighbours(followerCount, friendCount);
+            me.willBeShown = false;
           }
-          else {
-            console.log("Failed to load profile for user with ID " + me.id + ".");
-          }
-        });
-      }
+        }
+        else {
+          console.log("Failed to load profile for user with ID " + me.id + ".");
+        }
+      });
     }
   }
 
-  Node.prototype.hideProfile = function() {
-    if (this.showProfileCount === 0) return;
-    this.hideNode();
-    if (--this.showProfileCount === 0) {
-      if (this.willBeShown) {
-        // Cancel a show request that is yet to be fulfilled
-        this.willBeShown = false;
-      }
-      else {
-        this.setToHideProfileAppearance();
-        hideNeighbours.call(this);
-      }
+  Node.prototype.tryHide = function() {
+    if (this.willBeShown) {
+      // Cancel a show request that is yet to be fulfilled
+      this.willBeShown = false;
     }
+    else {
+      this.hide();
+      this.requestHideNeighbours();
+    }
+  }
+
+  /*
+   * Configure this node's appearance so that it displays the user's name and profile image.
+   */
+  Node.prototype.show = function() {
+    if (!this.visible) {
+      scene.add(this.object);
+      Node.shownNodes[this.id] = this;
+      // If we're showing the node for the first time
+      if (!this.hasBeenShown) {
+        this.hasBeenShown = true;
+        this.scale = Math.log(this.profile.followers_count+1)/Math.log(100)+1;
+        this.dpMesh.scale.set(this.scale, this.scale, 1);
+        this.mass = this.scale * this.scale;
+        this.textBubble.redraw(this.profile.name);
+        // If we're not testing locally and there's a profile image URL, load the image
+        if (!localFetch && this.profile.profile_image_url) {
+          this.dpMaterial.map = THREE.ImageUtils.loadTexture(this.profile.profile_image_url);
+          this.dpMaterial.needsUpdate = true;
+        }
+      }
+      this.visible = true;
+    }
+  }
+
+  Node.prototype.hide = function() {
+    if (this.visible) {
+      scene.remove(this.object);
+      delete Node.shownNodes[this.id];
+      this.visible = false;
+    }
+  }
+
+  /*
+   * This should be called when a node's profile is loaded so that it can
+   * make the necessary callbacks.
+   */
+  Node.prototype.makeLoadedCallbacks = function() {
+    for (var i = 0; i < this.onLoadFuncs.length; ++i) {
+      this.onLoadFuncs[i].apply(null, this.onLoadArgs[i]);
+    }
+    this.onLoadFuncs = [];
+    this.onLoadArgs = [];
   }
 
   // If the follower count is invalid, or greater than the cap, adjust it.
@@ -358,60 +404,84 @@ define(function() {
 
   }
 
+  Node.prototype.expand = function() {
+    if (!this.expanded) {
+      this.requestShowNeighbours();
+      this.expanded = true;
+    }
+  }
+
+  Node.prototype.collapse = function() {
+    if (this.expanded) {
+      this.requestHideNeighbours();
+      this.expanded = false;
+    }
+  }
+
   /*
    * Show all the neighbours of this node. This won't show the profiles of the neighbours,
    * so it shouldn't be called outside of this module. Use showNeighbourProfiles for that.
    */
-  Node.prototype.showNeighbours = function(followerCount, friendCount) {
-    this.showNeighboursCheckedArgs(this.checkFollowerCount(followerCount), this.checkFriendCount(friendCount));
-    // Call the select function again to ensure new edges are highlighted
-    if (this.selected)
-      this.select();
-  }
+  Node.prototype.requestShowNeighbours = function(followerCount, friendCount) {
+    // Ensure the follower and friend counts are valid
+    followerCount = this.checkFollowerCount(followerCount);
+    friendCount = this.checkFriendCount(friendCount);
 
-  Node.prototype.showNeighboursCheckedArgs = function(followerCount, friendCount) {
     // Keep track of the nodes that will be newly appearing on the graph.
-    var appearingNodes = new Array();
+    var appearingNodes = [];
 
-    // Show the specified number of followers if they are not already shown, creating their nodes if they do not exist
-    for (var i = this.numShownFollowerNodes; i < followerCount; ++i) {
+    // Create the neighbour nodes if they do not exist
+    for (var i = 0; i < followerCount; ++i) {
       var id = this.profile.followers[i];
       var node = Node.get(id);
       if (!node)
         node = new Node(id);
-      node.showNode();
-      // If node is now visible
-      if (node.showNodeCount === 2)
-        appearingNodes.push(node);
     }
 
-    for (var i = this.numShownFriendNodes; i < friendCount; ++i) {
+    for (var i = 0; i < friendCount; ++i) {
       var id = this.profile.friends[i];
       var node = Node.get(id);
       if (!node)
         node = new Node(id);
-      node.showNode();
+    }
+
+    // Construct the edges between the nodes
+    this.constructEdges(followerCount, friendCount);
+
+    // Request for the neighbour nodes to be shown, and record the ones
+    // which will be appearing (providing their profiles can be loaded)
+    for (var i = 0; i < followerCount; ++i) {
+      var node = Node.get(this.profile.followers[i]);
+      node.requestShow();
       // If node is now visible
-      if (node.showNodeCount === 2)
+      if (node.showCount === 2)
         appearingNodes.push(node);
     }
 
+    for (var i = 0; i < friendCount; ++i) {
+      var node = Node.get(this.profile.friends[i]);
+      node.requestShow();
+      // If node is now visible
+      if (node.showCount === 2)
+        appearingNodes.push(node);
+    }
+
+    // Position the appearing nodes
     positionAppearingNodes(appearingNodes, this.position);
-    this.constructEdges(followerCount, friendCount);
+
     this.numShownFollowerNodes = followerCount;
     this.numShownFriendNodes = friendCount;
-    this.profileIsShown = true;
   }
 
   /*
    * Hide all the neighbours of this node.
    */
-  Node.prototype.hideNeighbours = function() {
+  Node.prototype.requestHideNeighbours = function() {
     for (var i = 0; i < this.numShownFollowerNodes; ++i)
-      Node.get(this.profile.followers[i]).hideNode();
+      Node.get(this.profile.followers[i]).requestHide();
 
     for (var i = 0; i < this.numShownFriendNodes; ++i)
-      Node.get(this.profile.friends[i]).hideNode();
+      Node.get(this.profile.friends[i]).requestHide();
 
     this.numShownFollowerNodes = 0;
     this.numShownFriendNodes = 0;
@@ -420,9 +490,9 @@ define(function() {
   /*
    * Show the profiles of all this node's neighbours, displaying the neighbour
    * nodes first if need be.
-   */
+
   Node.prototype.showNeighbourProfiles = function(followerCount, friendCount) {
-    if (!this.profileLoaded || this.showProfileCount === 0) return;
+    if (!this.profile || this.showProfileCount === 0) return;
 
 	//USE BATCH FETCH PHP SCRIPT HERE
 
@@ -430,30 +500,32 @@ define(function() {
     friendCount = this.checkFriendCount(friendCount);
 
     // Ensure that the nodes are shown before we show their profiles
-    this.showNeighboursCheckedArgs.call(this, followerCount, friendCount);
+    this.requestShowNeighboursCheckedArgs.call(this, followerCount, friendCount);
 
     // Keep track of the nodes that will be newly appearing on the graph.
     var appearingNodes = new Array();
 
-    // Show the specified number of followers, creating their nodes if they do not exist
+    // Show the specified number of followers
     for (var i = this.numShownFollowerProfiles; i < followerCount; ++i) {
       var id = this.profile.followers[i];
       var node = Node.get(id);
-      // Node is about to be shown
-      if (node.showNodeCount === 1) {
+      node.requestShow();
+      node.showProfile();
+      // If node is now visible
+      if (node.showCount === 2) {
         appearingNodes.push(node);
       }
-      node.showProfile();
     }
 
     for (var i = this.numShownFriendProfiles; i < friendCount; ++i) {
       var id = this.profile.friends[i];
       var node = Node.get(id);
-      // Node is about to be shown
-      if (node.showNodeCount === 1) {
+      node.requestShow();
+      node.showProfile();
+      // If node is now visible
+      if (node.showCount === 2) {
         appearingNodes.push(node);
       }
-      node.showProfile();
     }
 
     positionAppearingNodes(appearingNodes, this.position);
@@ -464,6 +536,7 @@ define(function() {
     if (this.selected && appearingNodes.length > 0)
       this.select();
   }
+  */
 
   // May not need implementation // Node.prototype.hideNeighbourProfiles = function() {}
 
@@ -499,29 +572,28 @@ define(function() {
     for (var i = this.followerEdgesConstructed; i < followerCount; ++i) {
       var followerID = followers[i];
       var followerNode = Node.get(followerID);
+      // If we've already had the edge constructed for us, continue
+      if (this.edgesToFollowers[followerID]) continue;
 
       // If we already built the friend edge, update the existing edge
-      if (this.edgesToFriends[followerID]) {
-        this.edgesToFollowers[followerID] = this.edgesToFriends[followerID];
+      var edge = this.edgesToFriends[followerID];
+      if (edge) {
+        this.edgesToFollowers[followerID] = edge;
+        followerNode.edgesToFriends[this.id] = edge;
         this.edgesToFollowers[followerID].setArrow(this);
-        this.edgesToFollowers[followerID].setArrowScale(this, calcArrowScaleFromInfluence(followerNode, this));
+        attemptSetArrowScale(this.edgesToFollowers[followerID], followerNode, this);
         continue;
       }
 
-      if (followerNode.profileLoaded) {
-        // If the follower node already has a friend edge connected to us, keep the existing edge
-        if (followerNode.edgesToFriends[this.id]) {
-          this.edgesToFollowers[followerID] = followerNode.edgesToFriends[this.id];
-          this.edgesToFollowers[followerID].setArrowScale(this, calcArrowScaleFromInfluence(followerNode, this));
-          continue ;
-        }
-
+      if (followerNode.profile) {
         // If the follower node already has a follower edge connected to us, update the existing edge
         // to reflect that they are also following us
-        if (followerNode.edgesToFollowers[this.id]) {
-          this.edgesToFollowers[followerID] = followerNode.edgesToFollowers[this.id];
+        edge = followerNode.edgesToFollowers[this.id];
+        if (edge) {
+          this.edgesToFollowers[followerID] = edge;
+          followerNode.edgesToFriends[this.id] = edge;
           this.edgesToFollowers[followerID].setArrow(this);
-          this.edgesToFollowers[followerID].setArrowScale(this, calcArrowScaleFromInfluence(followerNode, this));
+          attemptSetArrowScale(this.edgesToFollowers[followerID], followerNode, this);
           continue;
         }
       }
@@ -530,7 +602,7 @@ define(function() {
       this.edgesToFollowers[followerID] = edge;
       followerNode.edgesToFriends[this.id] = edge;
       edge.setArrow(this);
-      edge.setArrowScale(this, calcArrowScaleFromInfluence(followerNode, this));
+      attemptSetArrowScale(edge, followerNode, this);
     }
     this.followerEdgesConstructed = followerCount;
 
@@ -538,29 +610,28 @@ define(function() {
     for (var i = this.friendEdgesConstructed; i < friendCount; ++i) {
       var friendID = friends[i];
       var friendNode = Node.get(friendID);
+      // If we've already had the edge constructed for us, continue
+      if (this.edgesToFriends[friendID]) continue;
 
       // If we already built the follower edge, update the existing edge
-      if (this.edgesToFollowers[friendID]) {
-        this.edgesToFriends[friendID] = this.edgesToFollowers[friendID];
+      var edge = this.edgesToFollowers[friendID];
+      if (edge) {
+        this.edgesToFriends[friendID] = edge;
+        friendNode.edgesToFollowers[this.id] = edge;
         this.edgesToFriends[friendID].setArrow(friendNode);
-        this.edgesToFriends[friendID].setArrowScale(friendNode, calcArrowScaleFromInfluence(this, friendNode));
+        attemptSetArrowScale(this.edgesToFriends[friendID], this, friendNode);
         continue;
       }
 
-      if (friendNode.profileLoaded) {
-        // If the friend node already has a follower edge connected to us, keep the existing edge
-        if (friendNode.edgesToFollowers[this.id]) {
-          this.edgesToFriends[friendID] = friendNode.edgesToFollowers[this.id];
-          this.edgesToFriends[friendID].setArrowScale(friendNode, calcArrowScaleFromInfluence(this, friendNode));
-          continue;
-        }
+      if (friendNode.profile) {
         // If the friend node already has a friend edge connected to us, update the existing edge
         // to reflect that we are also a friend of them
-        var theirFriends = friendNode.profile.friends;
-        if (friendNode.edgesToFriends[this.id]) {
-          this.edgesToFriends[friendID] = friendNode.edgesToFriends[this.id];
+        edge = friendNode.edgesToFriends[this.id];
+        if (edge) {
+          this.edgesToFriends[friendID] = edge;
+          friendNode.edgesToFollowers[this.id] = edge;
           this.edgesToFriends[friendID].setArrow(friendNode);
-          this.edgesToFriends[friendID].setArrowScale(friendNode, calcArrowScaleFromInfluence(this, friendNode));
+          attemptSetArrowScale(this.edgesToFriends[friendID], this, friendNode);
           continue;
         }
       }
@@ -569,40 +640,50 @@ define(function() {
       this.edgesToFriends[friendID] = edge;
       friendNode.edgesToFollowers[this.id] = edge;
       edge.setArrow(friendNode);
-      edge.setArrowScale(friendNode, calcArrowScaleFromInfluence(this, friendNode));
+      attemptSetArrowScale(edge, this, friendNode);
     }
     this.friendEdgesConstructed = friendCount;
   }
 
-  function calcArrowScaleFromInfluence(onUser, fromUser) {
-    return Math.log(influenceCalcLogTranslation + arrowScalingFromInfluence*calculateInfluence(onUser, fromUser));
+  function attemptSetArrowScale(edge, tailUser, headUser) {
+    if (!tailUser.profile) {
+      tailUser.onLoadFuncs.push(attemptSetArrowScale);
+      tailUser.onLoadArgs.push([edge, tailUser, headUser]);
+      return 0;
+    }
+    else if (!headUser.profile) {
+      headUser.onLoadFuncs.push(attemptSetArrowScale);
+      headUser.onLoadArgs.push([edge, tailUser, headUser]);
+      return 0;
+    }
+    else {
+      var score = calculateActivityScore(tailUser, headUser);
+      edge.setArrowScale(headUser, Math.log(activityCalcLogTranslation + arrowScalingFromActivity*score));
+    }
   }
 
   /*
-   * Calculate the influence of the second user on the first user and return
-   * a percentage score (0% - 100%).
+   * Calculate the activity score of the first user w.r.t. the second user and return
+   * a percentage (0% - 100%).
    */
-  function calculateInfluence(onUser, fromUser) {
-    if (!onUser.profile || !fromUser.profile) return 0;
+  function calculateActivityScore(ofUser, aboutUser) {
 		var tweetMentions = 0;
 		var tweetFavorites = 0;
 		var infPercentage = 0.0;
 		var yesNotifications = false;
+    // WHY AREN'T THEY ALL BIG
+    // ALSO, ADD DIFFRENT MASSES FOR DIFFERENT SIZE NODES?
+    if (Math.random() > 0.5)
+      return 1;
+    else
+      return 0.5;
 
-		var fromUserScreenName = fromUser.profile.screen_name;
+		var aboutUserScreenName = aboutUser.profile.screen_name;
 
-    /*
-		if(X1isCenter && onUser.centralUser == true){
-			yesNotifications = true;
-			if(userX2.notifications != null && userX2.notifications == true)
-				infPrecetage += 0.15;
-		}
-    */
-
-		tweetMentions = countMentions(onUser, fromUserScreenName);
-		tweetFavorites = countFavorites(onUser, fromUserScreenName);
-		infPercentage += calculatePercentage(tweetMentions, tweetFavorites, onUser, yesNotifications);
-    // If half a user's activity is about one person, consider it maximum influence
+		tweetMentions = countMentions(ofUser, aboutUserScreenName);
+		tweetFavorites = countFavorites(ofUser, aboutUserScreenName);
+		infPercentage += calculatePercentage(tweetMentions, tweetFavorites, ofUser, yesNotifications);
+    // If half a user's activity is about one person, consider it maximum
     infPercentage *= 2;
     if (infPercentage > 1)
       infPercentage = 1;
@@ -615,13 +696,13 @@ define(function() {
 	 * Counts and returns the number of mentions and replies the first user's tweets
    * contain of the second user.
 	 */
-	function countMentions(onUser, fromUserScreenName){
+	function countMentions(ofUser, aboutUserScreenName){
 		var tweetMentions = 0;
-		var tweets = onUser.profile.timeline;
+		var tweets = ofUser.profile.timeline;
 
 		for(var i = 0; i < tweets.length; ++i) {
 			// Check if the tweet is in reply to the target user
-			if (tweets[i].in_reply_to_screen_name === fromUserScreenName) {
+			if (tweets[i].in_reply_to_screen_name === aboutUserScreenName) {
 				++tweetMentions;
       }
 			// Check if the tweet mentions the target user
@@ -629,7 +710,7 @@ define(function() {
 				var mentions = tweets[i].entities.user_mentions;
 				if(mentions) {
 					for (var j = 0; j < mentions.length; ++j) {
-						if (mentions[j].screen_name === fromUserScreenName) {
+						if (mentions[j].screen_name === aboutUserScreenName) {
 							++tweetMentions;
               break;
             }
@@ -645,20 +726,20 @@ define(function() {
 	 * Counts and returns the number of tweets of the second user that the first user
    * has favourited.
 	 */
-	function countFavorites(onUser, fromUserScreenName) {
+	function countFavorites(ofUser, aboutUserScreenName) {
 		var tweetFavorites = 0;
-		var favourites = onUser.profile.favorites;
+		var favourites = ofUser.profile.favorites;
 
 		for (var i = 0; i < favourites.length; ++i)
-			if (favourites[i].user && favourites[i].user.screen_name === fromUserScreenName)
+			if (favourites[i].user && favourites[i].user.screen_name === aboutUserScreenName)
 				++tweetFavorites;
 
 		return tweetFavorites;
 	}
 
-	function calculatePercentage(tweetMentions, tweetFavourites, onUser, yesNotifications) {
-    var tweetPercentInf = (tweetMentions > 0) ? tweetMentions/onUser.profile.timeline.length : 0;
-    var favoritePercentInf = (tweetFavourites > 0) ? tweetFavourites/onUser.profile.favorites.length : 0;
+	function calculatePercentage(tweetMentions, tweetFavourites, ofUser, yesNotifications) {
+    var tweetPercentInf = (tweetMentions > 0) ? tweetMentions/ofUser.profile.timeline.length : 0;
+    var favoritePercentInf = (tweetFavourites > 0) ? tweetFavourites/ofUser.profile.favorites.length : 0;
 
 		if(yesNotifications)
 			return tweetPercentInf*0.6375+favoritePercentInf*0.2125;
@@ -679,52 +760,47 @@ define(function() {
    * to its neighbours. The position of the node is not updated in this method.
    */
   Node.prototype.calculateForces = function() {
-    if (this.profileLoaded) {
-      // Add spring forces between connected nodes
+    // Add spring forces between connected nodes
 
-      for (var i = 0; i < this.numShownFollowerNodes; ++i) {
-        var follower = Node.get(this.profile.followers[i]);
-        // If the spring forces haven't already been added by the other node
-        if (!this.springForces[follower.id]) {
-          var displacement = (new THREE.Vector3()).subVectors(follower.position, this.position);
-          var length = displacement.length();
-          if (length > 0) {
-            var stretch = length-springRestLength;
-            var accel = displacement.multiplyScalar(springK*stretch*Math.log(stretch > 0 ? stretch : -stretch)/length);
-            if (!this.pinned)
-              this.springForces[follower.id] = accel;
-            if (!follower.pinned)
-              follower.springForces[this.id] = accel.clone().multiplyScalar(-1);
-          }
-        }
-      }
-
-      for (var i = 0; i < this.numShownFriendNodes; ++i) {
-        var following = Node.get(this.profile.friends[i]);
-        // If the spring forces haven't already been added by the other node
-        if (!this.springForces[following.id]) {
-          var displacement = (new THREE.Vector3()).subVectors(following.position, this.position);
-          var length = displacement.length();
-          if (length > 0) {
-            var accel = displacement.multiplyScalar(springK*(length-springRestLength)/length);
-            if (!this.pinned)
-              this.springForces[following.id] = accel;
-            if (!following.pinned)
-              following.springForces[this.id] = accel.clone().multiplyScalar(-1);
-          }
+    for (var followerID in this.edgesToFollowers) {
+      var follower = Node.get(followerID);
+      // If the node is visible and it hasn't already calculated the spring forces itself
+      if (follower.visible && !this.springForces[follower.id]) {
+        var displacement = follower.position.clone().sub(this.position);
+        var length = displacement.length();
+        if (length > 0) {
+          var stretch = length-springRestLength;
+          var force = displacement.multiplyScalar(springK*stretch/length);
+          this.springForces[follower.id] = force;
+          follower.springForces[this.id] = force.clone().multiplyScalar(-1);
         }
       }
     }
 
-    if (!this.pinned) {
+    for (var friendID in this.edgesToFriends) {
+      var friend = Node.get(friendID);
+      // If the node is visible and it hasn't already calculated the spring forces itself
+      if (friend.visible && !this.springForces[friend.id]) {
+        var displacement = friend.position.clone().sub(this.position);
+        var length = displacement.length();
+        if (length > 0) {
+          var stretch = length-springRestLength;
+          var force = displacement.multiplyScalar(springK*stretch/length);
+          this.springForces[friend.id] = force;
+          friend.springForces[this.id] = force.clone().multiplyScalar(-1);
+        }
+      }
+    }
+
+    if (!this.selected) {
       // Add forces from node proximity
       for (var id in Node.shownNodes) {
         var node = Node.get(id);
         if (node !== this) {
-          var displacement = (new THREE.Vector3()).subVectors(node.position, this.position);
+          var displacement = node.position.clone().sub(this.position);
           var length = displacement.length();
-          displacement.multiplyScalar(-repulsionStrength*node.scale/length/length/length);
-          this.accel.add(displacement);
+          displacement.multiplyScalar(-repulsionStrength*node.mass/length/length/length);
+          this.netForce.add(displacement);
         }
       }
     }
@@ -740,16 +816,16 @@ define(function() {
       // Displacement of the pointer from the node
       var displacement = pointerPos.sub(this.position);
       // Force is proportional to square distance and drag force
-      var newAccel = displacement.multiplyScalar(displacement.length() * pointerDragForce);
-      var mag = newAccel.length();
+      var force = displacement.multiplyScalar(displacement.length() * pointerDragForce);
+      var mag = force.length();
       // Limit the maximum drag force
-      if (mag > maxPointerDragAccel)
-        newAccel.multiplyScalar(maxPointerDragAccel / mag);
-      this.accel.add(newAccel);
+      if (mag > maxPointerDragForce)
+        force.multiplyScalar(maxPointerDragForce / mag);
+      this.netForce.add(force);
     }
 
     // Set the materials of the node's meshes to reflect its current state
-    if (this.profileLoaded && this.showProfileCount) {
+    if (this.visible) {
       if (this.selected) {
         this.dpBorderMesh.material = selectedDPBorderMat;
       }
@@ -758,17 +834,6 @@ define(function() {
       }
       else {
         this.dpBorderMesh.material = dpBorderMat;
-      }
-    }
-    else {
-      if (this.selected) {
-        this.sphereMesh.material = selectedSphereMat;
-      }
-      else if (this.highlighted) {
-        this.sphereMesh.material = highlightedSphereMat;
-      }
-      else {
-        this.sphereMesh.material = sphereMat;
       }
     }
   }
@@ -785,56 +850,47 @@ define(function() {
     if (!this.selected) {
       // Add spring forces
       for (var id in this.springForces) {
-        this.accel.add(this.springForces[id]);
+        this.netForce.add(this.springForces[id]);
       }
 
       // Add drag force
-      this.accel.sub(this.velocity.clone().multiplyScalar(dragConstant*this.velocity.length()));
+      this.netForce.sub(this.velocity.clone().multiplyScalar(dragConstant*this.velocity.length()));
+
       // Limit maximum force
-      var forceMag = this.accel.length();
+      var forceMag = this.netForce.length();
       if (forceMag === NaN) {
-        this.accel.set(0, 0, 0);
+        this.netForce.set(0, 0, 0);
         console.log("Encountered a NaN accel value for node with ID " + this.id);
       }
       else if (forceMag > maxForceMag) {
-        this.accel.multiplyScalar(maxForceMag/forceMag);
+        this.netForce.multiplyScalar(maxForceMag/forceMag);
       }
-      // Update velocity
-      this.velocity.add(this.accel.multiplyScalar(this.accumulatedTime));
 
-      // Round to zero for very small velocities to stop slow drifting when node is not being dragged
-      if (this.grabbed) {
-        this.position.add(this.velocity.clone().multiplyScalar(this.accumulatedTime));
-      }
-      else {
-        // Apply stabilising force (to help stop prolonged, slow movement of nodes)
+      // Update velocity
+      this.velocity.add(this.netForce.multiplyScalar(this.accumulatedTime/this.mass));
+
+      if (!this.grabbed) {
+        // Apply stabilising deceleration (to help stop prolonged, slow movement of nodes)
         var vmag = this.velocity.length();
         var vdir = this.velocity.clone().divideScalar(vmag);
-        var negatedVelocity = this.accumulatedTime*stabilisingForce;
+        var negatedVelocity = this.accumulatedTime*stabilisingDeceleration;
         if (vmag > negatedVelocity) {
           vmag -= negatedVelocity;
-          // Update position
-          this.position.add(vdir.multiplyScalar(this.accumulatedTime*vmag));
+          this.velocity = vdir.multiplyScalar(vmag);
         }
         else this.velocity.set(0, 0, 0);
       }
+
+      this.position.add(this.velocity.clone().multiplyScalar(this.accumulatedTime));
     }
 
     // Reset forces
     this.springForces = {};
-    this.accel.set(0, 0, 0);
+    this.netForce.set(0, 0, 0);
     this.accumulatedTime = 0;
   }
 
   Node.prototype.updateComponents = function(deltaTime, camera, projector) {
-    if (!this.selected) {
-      // Update edges
-      for (var ID in this.edgesToFollowers)
-        this.edgesToFollowers[ID].update(camera, projector);
-      for (var ID in this.edgesToFriends)
-        this.edgesToFriends[ID].update(camera, projector);
-    }
-
     // Update text bubble
     if (this.textBubble.visible) {
       this.textBubble.scaleForDistance(zDistanceToCamera(this.position));
@@ -851,7 +907,7 @@ define(function() {
 
   Node.prototype.highlight = function() {
     this.highlighted = true;
-    if (this.profileLoaded && !this.textBubble.visible) {
+    if (this.profile && !this.textBubble.visible) {
       this.textBubble.redraw();
       this.object.add(this.textBubble.mesh);
       this.textBubble.visible = true;
@@ -868,7 +924,7 @@ define(function() {
 
   Node.prototype.select = function() {
     this.selected = true;
-    if (this.profileLoaded && !this.textBubble.visible) {
+    if (this.profile && !this.textBubble.visible) {
       this.textBubble.redraw();
       this.object.add(this.textBubble.mesh);
       this.textBubble.visible = true;
@@ -908,15 +964,16 @@ define(function() {
   var edgeTailColor = new THREE.Color();
   edgeTailColor.setRGB(0.5, 0, 1);
   var minArrowScale = 0.25;
-  var influenceCalcLogTranslation = Math.pow(Math.E, minArrowScale);
-  var arrowScalingFromInfluence = 1.5;
-  var maxArrowScale = Math.log(influenceCalcLogTranslation + arrowScalingFromInfluence);
+  var activityCalcLogTranslation = Math.pow(Math.E, minArrowScale);
+  var arrowScalingFromActivity = 5;
+  var maxArrowScale = Math.log(activityCalcLogTranslation + arrowScalingFromActivity);
 
   /*
    * The Edge object visually depicts a relationship between two nodes.
    */
   function Edge(node1, node2)
   {
+    Node.edges.push(this);
     this.node1 = node1;
     this.node2 = node2;
 
@@ -943,7 +1000,6 @@ define(function() {
     this.object.add(this.middleMesh);
 
     this.visible = false;
-    this.doubleFollower = false;
 
     this.setArrowScale(node1, minArrowScale);
     this.setArrowScale(node2, minArrowScale);
@@ -958,6 +1014,9 @@ define(function() {
       return geo;
     }
   }
+
+  // An array of all edges constructed. This exists so that the main loop can update the edges.
+  Node.edges = [];
 
   Edge.prototype.setArrow = function(node) {
     if (node === this.node1) {
@@ -1051,133 +1110,119 @@ define(function() {
         scene.remove(this.object);
         this.visible = false;
       }
-      else positionMeshes.call(this);
     }
     else {
       if (this.node1.visible && this.node2.visible) {
         scene.add(this.object);
         this.visible = true;
-        positionMeshes.call(this);
       }
     }
 
-    function positionMeshes() {
-      var fullDirVector = this.node2.position.clone().sub(this.node1.position).normalize();
+    if (!this.visible) return;
 
-      // The z-distance of the two nodes from the camera
-      var node1ZDist = camera.forward.dot(this.node1.position.clone().sub(camera.position));
-      var node2ZDist = camera.forward.dot(this.node2.position.clone().sub(camera.position));
+    var fullDirVector = this.node2.position.clone().sub(this.node1.position).normalize();
 
-      // Calculate the position on screen of the nodes that aren't behind the camera
-      if (node1ZDist > camera.near) {
-        // The position of node 1 on the screen
-        var node1Screen = projector.projectVector(this.node1.position.clone(), camera);
-        // The size of node 1 on the screen (half)
-        var node1ScreenHalfSizeY = projector.projectVector(
-          this.node1.position.clone().add(camera.up.clone().multiplyScalar(0.5*this.node1.scale)), camera
-        ).y - node1Screen.y;
-        // A point nearby in the direction of the edge
-        var pointAlongEdge = projector.projectVector(this.node1.position.clone().add(fullDirVector), camera);
-      }
+    // The z-distance of the two nodes from the camera
+    var node1ZDist = camera.forward.dot(this.node1.position.clone().sub(camera.position));
+    var node2ZDist = camera.forward.dot(this.node2.position.clone().sub(camera.position));
 
-      if (node2ZDist > camera.near) {
-        var node2Screen = projector.projectVector(this.node2.position.clone(), camera);
-        var node2ScreenHalfSizeY = projector.projectVector(
-          this.node2.position.clone().add(camera.up.clone().multiplyScalar(0.5*this.node2.scale)), camera
-        ).y - node2Screen.y;
-        var pointAlongEdge = projector.projectVector(this.node2.position.clone().sub(fullDirVector), camera);
-      }
-
-      // If one of the nodes is in front of the camera, use it to calculate the arrow head displacements
-      if (node1ZDist > camera.near || node2ZDist > camera.near) {
-        // Calculate the direction vector of the edge on the screen
-        var dirVectorScreen;
-        // Choose the node to get the direction vector with
-        // Either will work, as long as the selected node is in front of the camera
-        if (node1ZDist > node2ZDist)
-          dirVectorScreen = pointAlongEdge.sub(node1Screen);
-        else
-          dirVectorScreen = node2Screen.clone().sub(pointAlongEdge);
-        dirVectorScreen.z = 0;
-        dirVectorScreen.normalize();
-
-        // Returns theta between -180 and 180
-        var theta = Math.atan2(dirVectorScreen.y, dirVectorScreen.x);
-        // Find 1st quadrant equivalent for theta
-        if (theta < 0)
-          theta = -theta;
-        if (theta > Math.PI/2)
-          theta = Math.PI - theta;
-
-        // Calculate arrow head displacements
-        var displacementNode1 = 0;
-        var displacementNode2 = 0;
-        // If we're before the 1st corner of the square
-        if (theta < Math.atan(camera.aspect)) {
-          var a = (1/camera.aspect)/Math.cos(theta);
-          displacementNode1 = node1ScreenHalfSizeY*a;
-          displacementNode2 = -node2ScreenHalfSizeY*a;
-        }
-        else {
-          var a = Math.sin(theta);
-          displacementNode1 = node1ScreenHalfSizeY/a;
-          displacementNode2 = -node2ScreenHalfSizeY/a;
-        }
-      }
-
-      // Calculate the displaced arrow head position for each node
-      if (node1ZDist > camera.near) {
-        var node1ScreenMod = node1Screen.add(dirVectorScreen.clone().multiplyScalar(displacementNode1));
-        var leftPoint = projector.unprojectVector(node1ScreenMod, camera);
-      }
-      else var leftPoint = this.node1.position.clone();
-
-      if (node2ZDist > camera.near) {
-        var node2ScreenMod = node2Screen.add(dirVectorScreen.clone().multiplyScalar(displacementNode2));
-        var rightPoint = projector.unprojectVector(node2ScreenMod, camera);
-      }
-      else var rightPoint = this.node2.position.clone();
-
-      var dispVector = rightPoint.clone().sub(leftPoint);
-      var length = dispVector.length();
-      var dirVector = dispVector.clone().divideScalar(length);
-      var centrePosition = leftPoint.clone().add(dispVector.clone().multiplyScalar(0.5));
-      // Vector from the centre of the edge to the centre of the camera
-      var toCameraVector = camera.position.clone().sub(centrePosition);
-      // Find the normal vector of the edge that points closest to the centre of the camera (projection of toCameraVector onto plane of possible normals)
-      var normalVector = toCameraVector.sub(dirVector.clone().multiplyScalar(toCameraVector.dot(dirVector)));
-      // The direction the 'top' of the edge should be facing
-      var upVector = normalVector.clone().cross(dispVector).normalize();
-
-      this.object.position = centrePosition;
-      this.object.up = upVector;
-      this.object.lookAt(centrePosition.clone().add(normalVector));
-
-      this.leftArrowHeadMesh.position = new THREE.Vector3(-0.5*length, 0, 0);
-      this.rightArrowHeadMesh.position = new THREE.Vector3(0.5*length, 0, 0);
-      this.middleMesh.scale.x = this.rightArrowHeadMesh.position.x - this.leftArrowHeadMesh.position.x - this.leftArrowHeadMesh.scale.x - this.rightArrowHeadMesh.scale.x;
-      this.middleMesh.position.x = (this.leftArrowHeadMesh.scale.x - this.rightArrowHeadMesh.scale.x)/2;
+    // Calculate the position on screen of the nodes that aren't behind the camera
+    if (node1ZDist > camera.near) {
+      // The position of node 1 on the screen
+      var node1Screen = projector.projectVector(this.node1.position.clone(), camera);
+      // The size of node 1 on the screen (half)
+      var node1ScreenHalfSizeY = projector.projectVector(
+        this.node1.position.clone().add(camera.up.clone().multiplyScalar(0.5*this.node1.scale)), camera
+      ).y - node1Screen.y;
+      // A point nearby in the direction of the edge
+      var pointAlongEdge = projector.projectVector(this.node1.position.clone().add(fullDirVector), camera);
     }
+
+    if (node2ZDist > camera.near) {
+      var node2Screen = projector.projectVector(this.node2.position.clone(), camera);
+      var node2ScreenHalfSizeY = projector.projectVector(
+        this.node2.position.clone().add(camera.up.clone().multiplyScalar(0.5*this.node2.scale)), camera
+      ).y - node2Screen.y;
+      var pointAlongEdge = projector.projectVector(this.node2.position.clone().sub(fullDirVector), camera);
+    }
+
+    // If one of the nodes is in front of the camera, use it to calculate the arrow head displacements
+    if (node1ZDist > camera.near || node2ZDist > camera.near) {
+      // Calculate the direction vector of the edge on the screen
+      var dirVectorScreen;
+      // Choose the node to get the direction vector with
+      // Either will work, as long as the selected node is in front of the camera
+      if (node1ZDist > node2ZDist)
+        dirVectorScreen = pointAlongEdge.sub(node1Screen);
+      else
+        dirVectorScreen = node2Screen.clone().sub(pointAlongEdge);
+      dirVectorScreen.z = 0;
+      dirVectorScreen.normalize();
+
+      // Returns theta between -180 and 180
+      var theta = Math.atan2(dirVectorScreen.y, dirVectorScreen.x);
+      // Find 1st quadrant equivalent for theta
+      if (theta < 0)
+        theta = -theta;
+      if (theta > Math.PI/2)
+        theta = Math.PI - theta;
+
+      // Calculate arrow head displacements
+      var displacementNode1 = 0;
+      var displacementNode2 = 0;
+      // If we're before the 1st corner of the square
+      if (theta < Math.atan(camera.aspect)) {
+        var a = (1/camera.aspect)/Math.cos(theta);
+        displacementNode1 = node1ScreenHalfSizeY*a;
+        displacementNode2 = -node2ScreenHalfSizeY*a;
+      }
+      else {
+        var a = Math.sin(theta);
+        displacementNode1 = node1ScreenHalfSizeY/a;
+        displacementNode2 = -node2ScreenHalfSizeY/a;
+      }
+    }
+
+    // Calculate the displaced arrow head position for each node
+    if (node1ZDist > camera.near) {
+      var node1ScreenMod = node1Screen.add(dirVectorScreen.clone().multiplyScalar(displacementNode1));
+      var leftPoint = projector.unprojectVector(node1ScreenMod, camera);
+    }
+    else var leftPoint = this.node1.position.clone();
+
+    if (node2ZDist > camera.near) {
+      var node2ScreenMod = node2Screen.add(dirVectorScreen.clone().multiplyScalar(displacementNode2));
+      var rightPoint = projector.unprojectVector(node2ScreenMod, camera);
+    }
+    else var rightPoint = this.node2.position.clone();
+
+    var dispVector = rightPoint.clone().sub(leftPoint);
+    var length = dispVector.length();
+    var dirVector = dispVector.clone().divideScalar(length);
+    var centrePosition = leftPoint.clone().add(dispVector.clone().multiplyScalar(0.5));
+    // Vector from the centre of the edge to the centre of the camera
+    var toCameraVector = camera.position.clone().sub(centrePosition);
+    // Find the normal vector of the edge that points closest to the centre of the camera (projection of toCameraVector onto plane of possible normals)
+    var normalVector = toCameraVector.sub(dirVector.clone().multiplyScalar(toCameraVector.dot(dirVector)));
+    // The direction the 'top' of the edge should be facing
+    var upVector = normalVector.clone().cross(dispVector).normalize();
+
+    this.object.position = centrePosition;
+    this.object.up = upVector;
+    this.object.lookAt(centrePosition.clone().add(normalVector));
+
+    this.leftArrowHeadMesh.position = new THREE.Vector3(-0.5*length, 0, 0);
+    this.rightArrowHeadMesh.position = new THREE.Vector3(0.5*length, 0, 0);
+    this.middleMesh.scale.x = this.rightArrowHeadMesh.position.x - this.leftArrowHeadMesh.position.x - this.leftArrowHeadMesh.scale.x - this.rightArrowHeadMesh.scale.x;
+    this.middleMesh.position.x = (this.leftArrowHeadMesh.scale.x - this.rightArrowHeadMesh.scale.x)/2;
   }
 
   Edge.prototype.highlight = function() {
-    return;
-    this.lineGeo.colors[1].setHex(friendColorHighlighted);
-    if (this.doubleFollower)
-      this.lineGeo.colors[0].setHex(friendColorHighlighted);
-    else
-      this.lineGeo.colors[0].setHex(followerColorHighlighted);
-    this.lineGeo.colorsNeedUpdate = true;
+    return; // Not used at the moment
   }
 
   Edge.prototype.unhighlight = function() {
-    return;
-    this.lineGeo.colors[1].setHex(friendColor);
-    if (this.doubleFollower)
-      this.lineGeo.colors[0].setHex(friendColor);
-    else
-      this.lineGeo.colors[0].setHex(followerColor);
-    this.lineGeo.colorsNeedUpdate = true;
+    return; // Not used at the moment
   }
 
   // Text bubble-related variables
@@ -1228,6 +1273,12 @@ define(function() {
 
   return Node;
 });
+
+
+
+
+
+
 
 
 
