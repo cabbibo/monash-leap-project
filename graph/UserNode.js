@@ -141,11 +141,11 @@ define(function() {
   // Graph physics variables
   var springRestLength = 14;
   var springK = 250;
-  var repulsionStrength = 5000;
+  var repulsionStrength = 20000;
   var dragConstant = 2; // Drag forces
   var pointerDragForce = 20; // Force with which nodes are dragged by the user
   var maxPointerDragForce = 8000;
-  var stabilisingDeceleration = 0; // Constant deceleration applied to all nodes to stop slow movements
+  var stabilisingDeceleration = 100; // Constant deceleration applied to all nodes to stop slow movements
   var maxForceMag = 5000; // The maximum net force that will be applied to a node in a frame
   var maxPhysicsTimeStep = 1/50; // The maxmimum about of time a single step of simulation can be
 
@@ -488,59 +488,6 @@ define(function() {
   }
 
   /*
-   * Show the profiles of all this node's neighbours, displaying the neighbour
-   * nodes first if need be.
-
-  Node.prototype.showNeighbourProfiles = function(followerCount, friendCount) {
-    if (!this.profile || this.showProfileCount === 0) return;
-
-	//USE BATCH FETCH PHP SCRIPT HERE
-
-    followerCount = this.checkFollowerCount(followerCount);
-    friendCount = this.checkFriendCount(friendCount);
-
-    // Ensure that the nodes are shown before we show their profiles
-    this.requestShowNeighboursCheckedArgs.call(this, followerCount, friendCount);
-
-    // Keep track of the nodes that will be newly appearing on the graph.
-    var appearingNodes = new Array();
-
-    // Show the specified number of followers
-    for (var i = this.numShownFollowerProfiles; i < followerCount; ++i) {
-      var id = this.profile.followers[i];
-      var node = Node.get(id);
-      node.requestShow();
-      node.showProfile();
-      // If node is now visible
-      if (node.showCount === 2) {
-        appearingNodes.push(node);
-      }
-    }
-
-    for (var i = this.numShownFriendProfiles; i < friendCount; ++i) {
-      var id = this.profile.friends[i];
-      var node = Node.get(id);
-      node.requestShow();
-      node.showProfile();
-      // If node is now visible
-      if (node.showCount === 2) {
-        appearingNodes.push(node);
-      }
-    }
-
-    positionAppearingNodes(appearingNodes, this.position);
-    this.numShownFollowerProfiles = followerCount;
-    this.numShownFriendProfiles = friendCount;
-
-    // Call the select function again to ensure new edges are highlighted
-    if (this.selected && appearingNodes.length > 0)
-      this.select();
-  }
-  */
-
-  // May not need implementation // Node.prototype.hideNeighbourProfiles = function() {}
-
-  /*
    * Position the provided nodes equally around the provided position.
    */
   function positionAppearingNodes(appearingNodes, centrePosition) {
@@ -681,8 +628,6 @@ define(function() {
     infPercentage *= 2;
     if (infPercentage > 1)
       infPercentage = 1;
-    if (infPercentage > 0)
-      console.log(infPercentage);
 		return infPercentage;
 	}
 
@@ -817,19 +762,6 @@ define(function() {
         force.multiplyScalar(maxPointerDragForce / mag);
       this.netForce.add(force);
     }
-
-    // Set the materials of the node's meshes to reflect its current state
-    if (this.visible) {
-      if (this.selected) {
-        this.dpBorderMesh.material = selectedDPBorderMat;
-      }
-      else if (this.highlighted) {
-        this.dpBorderMesh.material = highlightedDPBorderMat;
-      }
-      else {
-        this.dpBorderMesh.material = dpBorderMat;
-      }
-    }
   }
 
   /*
@@ -885,6 +817,19 @@ define(function() {
   }
 
   Node.prototype.updateComponents = function(deltaTime, camera, projector) {
+    // Set the materials of the node's meshes to reflect its current state
+    if (this.visible) {
+      if (this.selected) {
+        this.dpBorderMesh.material = selectedDPBorderMat;
+      }
+      else if (this.highlighted) {
+        this.dpBorderMesh.material = highlightedDPBorderMat;
+      }
+      else {
+        this.dpBorderMesh.material = dpBorderMat;
+      }
+    }
+
     // Update text bubble
     if (this.textBubble.visible) {
       this.textBubble.scaleForDistance(zDistanceToCamera(this.position));

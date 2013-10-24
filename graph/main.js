@@ -380,13 +380,12 @@ function update(deltaTime)
       --nodeSimCredit;
     }
 
-    // Update the edges
-    for (var i = 0; i < Node.edges.length; ++i) {
-      Node.edges[i].update(camera, projector);
-    }
-
     nextNodeIndexToSimulate = n;
   }
+
+  // Update the edges
+  for (var i = 0; i < Node.edges.length; ++i)
+    Node.edges[i].update(camera, projector);
 
   // Update the components of all nodes (text bubble direction etc)
   for (var id in Node.shownNodes)
@@ -425,7 +424,7 @@ function getFingerOnScreenNDC(finger)
   fingerPositions[fpi] = [pos[0] / (0.5*screenWidth), pos[1] / (0.5*screenHeight)];
   fpi = (fpi+1)%fingerSmoothingLevel;
   var smoothed = averageOfVectors(fingerPositions, fingerSmoothingLevel);
-  console.log(smoothed);
+
   var NDC = new THREE.Vector2();
   NDC.x = smoothed[0];
   NDC.y = smoothed[1];
