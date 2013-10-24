@@ -148,19 +148,6 @@ function update(deltaTime)
 {
   Input.update();
 
-  if (Input.keyboard.keyPressed['1']) {
-    simulationFrozen = false;
-    selectedNode.expand();
-  }
-
-  if (Input.keyboard.keyPressed['2']) {
-    simulationFrozen = false;
-    selectedNode.collapse();
-  }
-
-  if (Input.keyboard.keyPressed[' '])
-    simulationFrozen = !simulationFrozen;
-
   // Execute coroutines
   for (var i = 0; i < coroutines.length;) {
     if (coroutines[i].func(coroutines[i], deltaTime))
@@ -260,16 +247,16 @@ function update(deltaTime)
       pointingHandCheckedIn = true;
       if (fingers[0].id === fingerPointer.id) {
         fingerPointer.copy(getFingerOnScreenNDC(fingers[0]));
-        console.log("Lenient.");
+        //console.log("Lenient.");
       }
       else if (fingers[1].id === fingerPointer.id) {
         fingerPointer.copy(getFingerOnScreenNDC(fingers[1]));
-        console.log("Lenient.");
+        //console.log("Lenient.");
       }
     }
 
     if (pointingHandID === -1) {
-      if (fingers.length >= 4) {
+      if (hands.length === 1 && fingers.length >= 4) {
         var t = hand.translation(Input.prevLeapFrame);
         dx = -t[0] * leapRadiansPerMM;
         dy = t[1] * leapRadiansPerMM;
@@ -296,6 +283,35 @@ function update(deltaTime)
       }
     }
   }
+
+  var scaleOut = 0;
+  if (hands.length === 2) {
+    var oldHands = Input.leap.frame(8).hands;
+    if (oldHands.length === 2) {
+      var handsDis = hands[1].palmPosition[0] - hands[0].palmPosition[0];
+      if (handsDis < 0)
+        handsDis *= -1;
+      var oldHandsDis = oldHands[1].palmPosition[0] - oldHands[0].palmPosition[0];
+      if (oldHandsDis < 0)
+        oldHandsDis *= -1;
+      scaleOut = handsDis - oldHandsDis;
+    }
+  }
+
+  // Check key pressees
+  if (Input.keyboard.keyPressed['1'] || scaleOut > 100) {
+    simulationFrozen = false;
+    selectedNode.expand();
+  }
+
+  if (Input.keyboard.keyPressed['2'] || scaleOut < -100) {
+    simulationFrozen = false;
+    selectedNode.collapse();
+  }
+
+  if (Input.keyboard.keyPressed[' '])
+    simulationFrozen = !simulationFrozen;
+
 
   // Now that we've checked for finger pointers, we can know whether
   // to interpet mouse input or not

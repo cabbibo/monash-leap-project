@@ -145,7 +145,7 @@ define(function() {
   var dragConstant = 2; // Drag forces
   var pointerDragForce = 20; // Force with which nodes are dragged by the user
   var maxPointerDragForce = 8000;
-  var stabilisingDeceleration = 80; // Constant deceleration applied to all nodes to stop slow movements
+  var stabilisingDeceleration = 75; // Constant deceleration applied to all nodes to stop slow movements
   var maxForceMag = 5000; // The maximum net force that will be applied to a node in a frame
   var maxPhysicsTimeStep = 1/50; // The maxmimum about of time a single step of simulation can be
 
