@@ -6,7 +6,7 @@ define(function() {
    * Setting localFetch to true will result in Twitter data being loaded
    * from the working directory rather than the server.
    */
-  var localFetch = true;
+  var localFetch = false;
 
   if (localFetch) {
     var fetchByIDUrl = "";
