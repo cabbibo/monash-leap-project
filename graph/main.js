@@ -14,6 +14,7 @@ var renderer;
 // Variables concerning simulation limits for performance
 var nodeSimCreditPerFrame = 100;
 var nextNodeIndexToSimulate = -1;
+var simulationFrozen = false;
 
 // Oculus Rift variables
 if (usingRift) {
@@ -147,11 +148,18 @@ function update(deltaTime)
 {
   Input.update();
 
-  if (Input.keyboard.keyPressed['1'])
+  if (Input.keyboard.keyPressed['1']) {
+    simulationFrozen = false;
     selectedNode.expand();
+  }
 
-  if (Input.keyboard.keyPressed['2'])
+  if (Input.keyboard.keyPressed['2']) {
+    simulationFrozen = false;
     selectedNode.collapse();
+  }
+
+  if (Input.keyboard.keyPressed[' '])
+    simulationFrozen = !simulationFrozen;
 
   // Execute coroutines
   for (var i = 0; i < coroutines.length;) {
@@ -345,42 +353,44 @@ function update(deltaTime)
   camera.right = camera.forward.clone().cross(camera.up).normalize();
 
   // Update the graph
-  var ids = Object.keys(Node.shownNodes);
-  var numNodes = ids.length;
+  if (!simulationFrozen) {
+    var ids = Object.keys(Node.shownNodes);
+    var numNodes = ids.length;
 
-  for (var id in Node.shownNodes)
-    Node.shownNodes[id].addTime(deltaTime);
+    for (var id in Node.shownNodes)
+      Node.shownNodes[id].addTime(deltaTime);
 
-  // Do a physics update for as many nodes as we have an allowance for
-  var nodeSimCredit = nodeSimCreditPerFrame;
-  var n = nextNodeIndexToSimulate;
-  var nodesLeft = numNodes;
-  while (nodesLeft > 0 && nodeSimCredit > 0) {
-    n = (n+1) % ids.length;
-    Node.shownNodes[ids[n]].calculateForces();
-    --nodesLeft;
-    --nodeSimCredit;
-  }
-  nodeSimCredit = nodeSimCreditPerFrame;
-  n = nextNodeIndexToSimulate;
-  nodesLeft = numNodes;
-  while (nodesLeft > 0 && nodeSimCredit > 0) {
-    n = (n+1) % ids.length;
-    Node.shownNodes[ids[n]].applyForces();
-    --nodesLeft;
-    --nodeSimCredit;
+    // Do a physics update for as many nodes as we have an allowance for
+    var nodeSimCredit = nodeSimCreditPerFrame;
+    var n = nextNodeIndexToSimulate;
+    var nodesLeft = numNodes;
+    while (nodesLeft > 0 && nodeSimCredit > 0) {
+      n = (n+1) % ids.length;
+      Node.shownNodes[ids[n]].calculateForces();
+      --nodesLeft;
+      --nodeSimCredit;
+    }
+    nodeSimCredit = nodeSimCreditPerFrame;
+    n = nextNodeIndexToSimulate;
+    nodesLeft = numNodes;
+    while (nodesLeft > 0 && nodeSimCredit > 0) {
+      n = (n+1) % ids.length;
+      Node.shownNodes[ids[n]].applyForces();
+      --nodesLeft;
+      --nodeSimCredit;
+    }
+
+    // Update the edges
+    for (var i = 0; i < Node.edges.length; ++i) {
+      Node.edges[i].update(camera, projector);
+    }
+
+    nextNodeIndexToSimulate = n;
   }
 
   // Update the components of all nodes (text bubble direction etc)
   for (var id in Node.shownNodes)
     Node.shownNodes[id].updateComponents(deltaTime, camera, projector);
-
-  // Update the edges
-  for (var i = 0; i < Node.edges.length; ++i) {
-    Node.edges[i].update(camera, projector);
-  }
-
-  nextNodeIndexToSimulate = n;
 
   // Set the fog distance
   var distance = zDistanceToCamera(centreOfFocus);

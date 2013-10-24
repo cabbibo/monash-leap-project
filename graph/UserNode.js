@@ -6,7 +6,7 @@ define(function() {
    * Setting localFetch to true will result in Twitter data being loaded
    * from the working directory rather than the server.
    */
-  var localFetch = true;
+  var localFetch = false;
 
   if (localFetch) {
     var fetchByIDUrl = "";
@@ -671,12 +671,6 @@ define(function() {
 		var tweetFavorites = 0;
 		var infPercentage = 0.0;
 		var yesNotifications = false;
-    // WHY AREN'T THEY ALL BIG
-    // ALSO, ADD DIFFRENT MASSES FOR DIFFERENT SIZE NODES?
-    if (Math.random() > 0.5)
-      return 1;
-    else
-      return 0.5;
 
 		var aboutUserScreenName = aboutUser.profile.screen_name;
 
