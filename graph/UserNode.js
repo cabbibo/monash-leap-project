@@ -6,7 +6,7 @@ define(function() {
    * Setting localFetch to true will result in Twitter data being loaded
    * from the working directory rather than the server.
    */
-  var localFetch = false;
+  var localFetch = true;
 
   if (localFetch) {
     var fetchByIDUrl = "";
@@ -145,7 +145,7 @@ define(function() {
   var dragConstant = 2; // Drag forces
   var pointerDragForce = 20; // Force with which nodes are dragged by the user
   var maxPointerDragForce = 8000;
-  var stabilisingDeceleration = 100; // Constant deceleration applied to all nodes to stop slow movements
+  var stabilisingDeceleration = 80; // Constant deceleration applied to all nodes to stop slow movements
   var maxForceMag = 5000; // The maximum net force that will be applied to a node in a frame
   var maxPhysicsTimeStep = 1/50; // The maxmimum about of time a single step of simulation can be
 
@@ -286,9 +286,10 @@ define(function() {
   Node.prototype.tryShow = function(followerCount, friendCount) {
     // If we've tried to load the profile before, don't try again
     if (this.profileLoadAttempted) {
-      if (this.profile)
+      if (this.profile) {
         this.show();
-      this.requestShowNeighbours(followerCount, friendCount);
+        this.requestShowNeighbours(followerCount, friendCount);
+      }
     }
     else {
       // Fetch the profile and then show it
@@ -1212,6 +1213,8 @@ define(function() {
 
   return Node;
 });
+
+
 
 
 

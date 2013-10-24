@@ -12,7 +12,7 @@ var nearClip = 1, farClip = 500;
 var renderer;
 
 // Variables concerning simulation limits for performance
-var nodeSimCreditPerFrame = 100;
+var nodeSimCreditPerFrame = 125;
 var nextNodeIndexToSimulate = -1;
 var simulationFrozen = false;
 
@@ -622,6 +622,8 @@ function main(i, n) {
   timeOfLastFrame = new Date().getTime();
   mainLoop();
 }
+
+
 
 
 
