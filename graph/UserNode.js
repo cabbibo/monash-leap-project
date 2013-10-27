@@ -335,7 +335,7 @@ define(function() {
       // If we're showing the node for the first time
       if (!this.hasBeenShown) {
         this.hasBeenShown = true;
-        this.scale = Math.log(this.profile.followers_count+1)/Math.log(100)+1;
+        this.scale = Math.log(this.profile.followers_count+100)/3;
         this.dpMesh.scale.set(this.scale, this.scale, 1);
         this.mass = this.scale * this.scale;
         // If we're not testing locally and there's a profile image URL, load the image
