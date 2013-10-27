@@ -38,6 +38,8 @@ var nodeSwitchingTime = 2;
 var maxSwitchingSpeedMultiplier = 5;
 var nodeSwitchingCurveConstant = 4 / (nodeSwitchingTime * nodeSwitchingTime) * (maxSwitchingSpeedMultiplier-1);
 
+var nodeHideTime = 0.2;
+
 // Leap Motion variables
 var leapMetresPerMM = 0.5;
 var leapRadiansPerMM = 0.02;
@@ -50,9 +52,6 @@ var leapDistance = 250; // in mm
 //var leapDistance = 600;
 var leapHeight = 0; //relative to the bottom of the display
 //var leapHeight = -250;
-
-// The context for drawing 2d graphics
-var drawingCanvas, drawingContext;
 
 window.addEventListener('resize',
                           function(event) {
@@ -99,10 +98,6 @@ function initializeScene()
   pointerCursor = new THREE.Sprite(pointerSpriteMaterial);
   pointerCursor.scale.set(48, 48, 1);
   scene.add(pointerCursor);
-
-  // Create the canvas for drawing 2d graphics
-  drawingCanvas = document.createElement('canvas');
-  drawingContext = drawingCanvas.getContext('2d');
 }
 
 function zDistanceToCamera(position)
@@ -114,9 +109,11 @@ function buildGraph()
 {
   Node.newNodeLoadedFromScreenName("PootPooter", function(node) {
     if (node) {
-      node.requestShow();
-      node.requestShow();
+      node.requestShow(true);
+      node.requestShow(true);
       select(node);
+      console.log(node.profile.followers);
+      console.log(node.profile.friends);
     }
     else console.log("Failed to load starting user!");
   });
@@ -306,7 +303,41 @@ function update(deltaTime)
 
   if (Input.keyboard.keyPressed['2'] || scaleOut < -100) {
     simulationFrozen = false;
-    selectedNode.collapse();
+    var hiddenArray = [];
+    selectedNode.collapse(hiddenArray);
+    // Construct a counter object to be passed to all coroutines:
+    // the last finished coroutine can do the finalizing work
+    var counterObj = {count: hiddenArray.length};
+    counterObj.sub = function() {
+      return --this.count;
+    }
+
+    for (var i = 0; i < hiddenArray.length; ++i) {
+      setCoroutine({counter: counterObj, currentTime: 0, endTime: nodeHideTime, subject: hiddenArray[i], origin: hiddenArray[i].position.clone(), target: selectedNode, newPos: new THREE.Vector3()},
+                   function(o, deltaTime) {
+                     o.currentTime += deltaTime;
+
+                     if (o.currentTime >= o.endTime) {
+                       o.subject.hide();
+                       if (o.counter.sub() === 0) {
+                         o.target.collapsing = false;
+                         o.target.expanded = false;
+                       }
+                       return true;
+                     }
+                     else {
+                       o.newPos.copy(o.target.position).sub(o.origin).multiplyScalar(o.currentTime/o.endTime).add(o.origin);
+                       o.subject.position.copy(o.newPos);
+                     }
+                   }
+      );
+    }
+  }
+
+  if (Input.keyboard.keyPressed['t']) {
+    var node = Node.nodes[16825289];
+    if (node)
+      console.log(node.showCount);
   }
 
   if (Input.keyboard.keyPressed[' '])
@@ -403,7 +434,7 @@ function update(deltaTime)
   for (var i = 0; i < Node.edges.length; ++i)
     Node.edges[i].update(camera, projector);
 
-  // Update the components of all nodes (text bubble direction etc)
+  // Update the components of all nodes (text bubble etc)
   for (var id in Node.shownNodes)
     Node.shownNodes[id].updateComponents(deltaTime, camera, projector);
 
@@ -638,6 +669,8 @@ function main(i, n) {
   timeOfLastFrame = new Date().getTime();
   mainLoop();
 }
+
+
 
 
 

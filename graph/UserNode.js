@@ -6,7 +6,7 @@ define(function() {
    * Setting localFetch to true will result in Twitter data being loaded
    * from the working directory rather than the server.
    */
-  var localFetch = false;
+  var localFetch = true;
 
   if (localFetch) {
     var fetchByIDUrl = "";
@@ -153,10 +153,10 @@ define(function() {
   var dpScale = 0.82; // The size of the display pic with respect to the size of the border
   var dpOutlineScale = 0.86;
   var dpBorderScale = 0.96;
-  var dpGeometry = new THREE.PlaneGeometry(dpScale, dpScale, 1, 1);
-  var dpOutlineGeometry = new THREE.PlaneGeometry(dpOutlineScale, dpOutlineScale, 1, 1);
-  var dpBorderGeometry = new THREE.PlaneGeometry(dpBorderScale, dpBorderScale, 1, 1);
-  var dpBorderOutlineGeometry = new THREE.PlaneGeometry(1, 1, 1, 1);
+  var dpGeometry = new THREE.PlaneGeometry(dpScale, dpScale);
+  var dpOutlineGeometry = new THREE.PlaneGeometry(dpOutlineScale, dpOutlineScale);
+  var dpBorderGeometry = new THREE.PlaneGeometry(dpBorderScale, dpBorderScale);
+  var dpBorderOutlineGeometry = new THREE.PlaneGeometry(1, 1);
 
   var dpOutlineMat = new THREE.MeshBasicMaterial({color: 0x000000});
   var dpBorderMat = new THREE.MeshBasicMaterial({color: 0x666666});
@@ -203,6 +203,7 @@ define(function() {
     this.grabbed = false;
     this.visible = false;
     this.hasBeenShown = false;
+    this.requestNeighboursCount = 0;
     this.expanded = false;
 
     // Functions to be called when this node's profile is loaded
@@ -226,8 +227,11 @@ define(function() {
     this.dpBorderOutlineMesh.node = this;
     this.dpMesh.add(this.dpBorderOutlineMesh);
 
-    this.textBubble = new TextBubble(this);
     this.scale = 1;
+
+    this.textBubble = new TextBubble(this);
+    this.infoPane = new InfoPane(this);
+    this.object.add(this.infoPane);
 
     // Associative array to store references to edge objects
     this.edgesToFollowers = {};
@@ -259,70 +263,65 @@ define(function() {
   /*
    * Request that the node be shown. The node will only be shown after 2 requests.
    */
-  Node.prototype.requestShow = function() {
+    /*
+   * Show the profile information for this node. This can be requested multiple times.
+   * The profile information is first loaded if necessary. A count is maintained so
+   * that the profile remains shown until all the nodes that asked for it to be shown
+   * ask for it to be hidden again.
+   */
+  Node.prototype.requestShow = function(requestNeighbours) {
     ++this.showCount;
     if (this.showCount === 2) {
       // If we've reached the required number of requests, attempt to show the node.
-      this.tryShow();
+      if (this.profileLoadAttempted) {
+        if (this.profile) {
+          this.show();
+          if (requestNeighbours)
+            this.requestShowNeighbours(false);
+        }
+      }
+      else {
+        // Fetch the profile and then show it
+        this.willBeShown = true;
+        var me = this;
+        fetchProfileByID(this.id, function(profile) {
+          me.profileLoadAttempted = true;
+          if (profile) {
+            me.profile = profile;
+            me.makeLoadedCallbacks();
+            // Before showing the profile, ensure that something didn't request the
+            // profile to be hidden again in the meantime
+            if (me.willBeShown) {
+              me.show();
+              if (requestNeighbours)
+                me.requestShowNeighbours(false);
+              me.willBeShown = false;
+            }
+          }
+          else {
+            console.log("Failed to load profile for user with ID " + me.id + ".");
+          }
+        });
+      }
     }
   }
 
   /*
    * Request that the node be hidden.
    */
-  Node.prototype.requestHide = function() {
+  Node.prototype.requestHide = function(hideNeighbours, hiddenArray) {
     if (this.showCount === 0) return;
-    if (--this.showCount === 1) {
-      this.tryHide();
-    }
-  }
 
-  /*
-   * Show the profile information for this node. This can be requested multiple times.
-   * The profile information is first loaded if necessary. A count is maintained so
-   * that the profile remains shown until all the nodes that asked for it to be shown
-   * ask for it to be hidden again.
-   */
-  Node.prototype.tryShow = function(followerCount, friendCount) {
-    // If we've tried to load the profile before, don't try again
-    if (this.profileLoadAttempted) {
-      if (this.profile) {
-        this.show();
-        this.requestShowNeighbours(followerCount, friendCount);
+    if (--this.showCount < 2) {
+      if (hiddenArray) {
+        hiddenArray.push(this);
+        this.pinned = true;
       }
-    }
-    else {
-      // Fetch the profile and then show it
-      this.willBeShown = true;
-      var me = this;
-      fetchProfileByID(this.id, function(profile) {
-        me.profileLoadAttempted = true;
-        if (profile) {
-          me.profile = profile;
-          me.makeLoadedCallbacks();
-          // Before showing the profile, ensure that something didn't request the
-          // profile to be hidden again in the meantime
-          if (me.willBeShown) {
-            me.show();
-            me.requestShowNeighbours(followerCount, friendCount);
-            me.willBeShown = false;
-          }
-        }
-        else {
-          console.log("Failed to load profile for user with ID " + me.id + ".");
-        }
-      });
-    }
-  }
-
-  Node.prototype.tryHide = function() {
-    if (this.willBeShown) {
-      // Cancel a show request that is yet to be fulfilled
-      this.willBeShown = false;
-    }
-    else {
-      this.hide();
-      this.requestHideNeighbours();
+      else {
+        this.hide();
+      }
+      if (hideNeighbours)
+        this.requestHideNeighbours(false, hiddenArray);
     }
   }
 
@@ -339,7 +338,6 @@ define(function() {
         this.scale = Math.log(this.profile.followers_count+1)/Math.log(100)+1;
         this.dpMesh.scale.set(this.scale, this.scale, 1);
         this.mass = this.scale * this.scale;
-        this.textBubble.redraw(this.profile.name);
         // If we're not testing locally and there's a profile image URL, load the image
         if (!localFetch && this.profile.profile_image_url) {
           this.dpMaterial.map = THREE.ImageUtils.loadTexture(this.profile.profile_image_url);
@@ -350,7 +348,12 @@ define(function() {
     }
   }
 
+  /*
+   * Hide the node if it is visible.
+   */
   Node.prototype.hide = function() {
+    // We pin during the hide animation. Unpin here.
+    this.pinned = false;
     if (this.visible) {
       scene.remove(this.object);
       delete Node.shownNodes[this.id];
@@ -406,16 +409,16 @@ define(function() {
   }
 
   Node.prototype.expand = function() {
-    if (!this.expanded) {
-      this.requestShowNeighbours();
+    if (!this.collapsing && !this.expanded) {
+      this.requestShowNeighbours(true);
       this.expanded = true;
     }
   }
 
-  Node.prototype.collapse = function() {
-    if (this.expanded) {
-      this.requestHideNeighbours();
-      this.expanded = false;
+  Node.prototype.collapse = function(hiddenArray) {
+    if (!this.collapsing && this.expanded) {
+      this.requestHideNeighbours(true, hiddenArray);
+      this.collapsing = true;
     }
   }
 
@@ -423,7 +426,9 @@ define(function() {
    * Show all the neighbours of this node. This won't show the profiles of the neighbours,
    * so it shouldn't be called outside of this module. Use showNeighbourProfiles for that.
    */
-  Node.prototype.requestShowNeighbours = function(followerCount, friendCount) {
+  Node.prototype.requestShowNeighbours = function(expanding, followerCount, friendCount) {
+    if (!expanding && ++this.requestNeighboursCount > 1) return;
+
     // Ensure the follower and friend counts are valid
     followerCount = this.checkFollowerCount(followerCount);
     friendCount = this.checkFriendCount(friendCount);
@@ -453,7 +458,7 @@ define(function() {
     // which will be appearing (providing their profiles can be loaded)
     for (var i = 0; i < followerCount; ++i) {
       var node = Node.get(this.profile.followers[i]);
-      node.requestShow();
+      node.requestShow(expanding);
       // If node is now visible
       if (node.showCount === 2)
         appearingNodes.push(node);
@@ -461,7 +466,7 @@ define(function() {
 
     for (var i = 0; i < friendCount; ++i) {
       var node = Node.get(this.profile.friends[i]);
-      node.requestShow();
+      node.requestShow(expanding);
       // If node is now visible
       if (node.showCount === 2)
         appearingNodes.push(node);
@@ -475,18 +480,22 @@ define(function() {
   }
 
   /*
-   * Hide all the neighbours of this node.
+   * Hide all the neighbours of this node. Note: with the current method
+   * of hiding nodes, cyclic show requests prevent proper behaviour.
    */
-  Node.prototype.requestHideNeighbours = function() {
+  Node.prototype.requestHideNeighbours = function(collapsing, hiddenArray) {
+    if (--this.requestNeighboursCount > 0) return;
+
     for (var i = 0; i < this.numShownFollowerNodes; ++i)
-      Node.get(this.profile.followers[i]).requestHide();
+      Node.get(this.profile.followers[i]).requestHide(collapsing, hiddenArray);
 
     for (var i = 0; i < this.numShownFriendNodes; ++i)
-      Node.get(this.profile.friends[i]).requestHide();
+      Node.get(this.profile.friends[i]).requestHide(collapsing, hiddenArray);
 
     this.numShownFollowerNodes = 0;
     this.numShownFriendNodes = 0;
   }
+
 
   /*
    * Position the provided nodes equally around the provided position.
@@ -732,7 +741,7 @@ define(function() {
       }
     }
 
-    if (!this.selected) {
+    if (!this.selected && !this.pinned) {
       // Add forces from node proximity
       for (var id in Node.shownNodes) {
         var node = Node.get(id);
@@ -773,8 +782,8 @@ define(function() {
     if (this.accumulatedTime > maxPhysicsTimeStep)
       this.accumulatedTime = maxPhysicsTimeStep;
 
-    // We don't move selected nodes. They become the centre of focus.
-    if (!this.selected) {
+    // We don't move selected or pinned nodes
+    if (!this.selected && !this.pinned) {
       // Add spring forces
       for (var id in this.springForces) {
         this.netForce.add(this.springForces[id]);
@@ -836,7 +845,7 @@ define(function() {
       this.textBubble.scaleForDistance(zDistanceToCamera(this.position));
     }
 
-    // Orient the DP
+    // Orient the node's object
     var q = this.object.quaternion;
     q.copy(camera.quaternion);
     q.x *= -1;
@@ -848,8 +857,8 @@ define(function() {
   Node.prototype.highlight = function() {
     this.highlighted = true;
     if (this.profile && !this.textBubble.visible) {
-      this.textBubble.redraw();
       this.object.add(this.textBubble.mesh);
+      this.textBubble.redraw(this.profile.name);
       this.textBubble.visible = true;
     }
   }
@@ -864,10 +873,15 @@ define(function() {
 
   Node.prototype.select = function() {
     this.selected = true;
-    if (this.profile && !this.textBubble.visible) {
-      this.textBubble.redraw();
-      this.object.add(this.textBubble.mesh);
-      this.textBubble.visible = true;
+    if (this.profile) {
+      if (!this.textBubble.visible) {
+        this.object.add(this.textBubble.mesh);
+        this.textBubble.redraw(this.profile.name);
+        this.textBubble.visible = true;
+      }
+      this.object.add(this.infoPane.mesh);
+      this.infoPane.redraw();
+      this.infoPane.visible = true;
     }
     for (var ID in this.edgesToFollowers)
       this.edgesToFollowers[ID].highlight();
@@ -880,6 +894,10 @@ define(function() {
     if (!this.highlighted && this.textBubble.visible) {
       this.object.remove(this.textBubble.mesh);
       this.textBubble.visible = false;
+    }
+    if (this.infoPane.visible) {
+      this.object.remove(this.infoPane.mesh);
+      this.infoPane.visible = false;
     }
     for (var ID in this.edgesToFollowers)
       this.edgesToFollowers[ID].unhighlight();
@@ -896,13 +914,21 @@ define(function() {
   }
 
   var edgeMaterial = new THREE.MeshBasicMaterial({side: THREE.DoubleSide, vertexColors: THREE.VertexColors});
-  //var edgeArrowColor = new THREE.Color(0xffffff);
+
   var edgeHeadColorBase = new THREE.Color();
   edgeHeadColorBase.setRGB(1, 0, 0);
   var edgeHeadColorBright = new THREE.Color();
   edgeHeadColorBright.setRGB(1, 1, 0);
   var edgeTailColor = new THREE.Color();
   edgeTailColor.setRGB(0.5, 0, 1);
+
+  var edgeHeadColorBaseH = new THREE.Color();
+  edgeHeadColorBaseH.setRGB(1, 0, 0);
+  var edgeHeadColorBrightH = new THREE.Color();
+  edgeHeadColorBrightH.setRGB(1, 1, 0);
+  var edgeTailColorH = new THREE.Color();
+  edgeTailColorH.setRGB(1, 0.3, 1);
+
   var minArrowScale = 0.25;
   var activityCalcLogTranslation = Math.pow(Math.E, minArrowScale);
   var arrowScalingFromActivity = 5;
@@ -940,6 +966,7 @@ define(function() {
     this.object.add(this.middleMesh);
 
     this.visible = false;
+    this.highlighted = false;
 
     this.setArrowScale(node1, minArrowScale);
     this.setArrowScale(node2, minArrowScale);
@@ -1002,9 +1029,28 @@ define(function() {
   {
     if (this.leftArrowHeadMesh.isArrow) {
       var scale = this.leftArrowHeadMesh.scale.x;
-      var color = edgeHeadColorBase.clone();
-      color.lerp(edgeHeadColorBright, (scale - minArrowScale) / (maxArrowScale-minArrowScale));
+      if (this.highlighted) {
+        var color = edgeHeadColorBaseH.clone();
+        color.lerp(edgeHeadColorBrightH, (scale - minArrowScale) / (maxArrowScale-minArrowScale));
+      }
+      else {
+        var color = edgeHeadColorBase.clone();
+        color.lerp(edgeHeadColorBright, (scale - minArrowScale) / (maxArrowScale-minArrowScale));
+      }
 
+      var geo = this.leftArrowHeadGeo;
+      for (var i = 0; i < 3; ++i)
+        geo.faces[0].vertexColors[i] = color;
+      geo.colorsNeedUpdate = true;
+
+      var faces = this.middleGeo.faces;
+      faces[0].vertexColors[0] = color;
+      faces[0].vertexColors[2] = color;
+      faces[1].vertexColors[0] = color;
+      this.middleGeo.colorsNeedUpdate = true;
+    }
+    else {
+      var color = this.highlighted ? edgeTailColorH : edgeTailColor;
       var geo = this.leftArrowHeadGeo;
       for (var i = 0; i < 3; ++i)
         geo.faces[0].vertexColors[i] = color;
@@ -1022,9 +1068,28 @@ define(function() {
   {
     if (this.rightArrowHeadMesh.isArrow) {
       var scale = this.rightArrowHeadMesh.scale.x;
-      var color = edgeHeadColorBase.clone();
-      color.lerp(edgeHeadColorBright, (scale - minArrowScale) / (maxArrowScale-minArrowScale));
+      if (this.highlighted) {
+        var color = edgeHeadColorBaseH.clone();
+        color.lerp(edgeHeadColorBrightH, (scale - minArrowScale) / (maxArrowScale-minArrowScale));
+      }
+      else {
+        var color = edgeHeadColorBase.clone();
+        color.lerp(edgeHeadColorBright, (scale - minArrowScale) / (maxArrowScale-minArrowScale));
+      }
 
+      var geo = this.rightArrowHeadGeo;
+      for (var i = 0; i < 3; ++i)
+        geo.faces[0].vertexColors[i] = color;
+      geo.colorsNeedUpdate = true;
+
+      var faces = this.middleGeo.faces;
+      faces[0].vertexColors[1] = color;
+      faces[1].vertexColors[1] = color;
+      faces[1].vertexColors[2] = color;
+      this.middleGeo.colorsNeedUpdate = true;
+    }
+    else {
+      var color = this.highlighted ? edgeTailColorH : edgeTailColor;
       var geo = this.rightArrowHeadGeo;
       for (var i = 0; i < 3; ++i)
         geo.faces[0].vertexColors[i] = color;
@@ -1158,18 +1223,33 @@ define(function() {
   }
 
   Edge.prototype.highlight = function() {
-    return; // Not used at the moment
+    return; // Disabled for the moment
+    if (!this.highlighted) {
+      this.highlighted = true;
+      this.updateLeftColors();
+      this.updateRightColors();
+    }
   }
 
   Edge.prototype.unhighlight = function() {
-    return; // Not used at the moment
+    return;
+    if (this.highlighted) {
+      this.highlighted = false;
+      this.updateLeftColors();
+      this.updateRightColors();
+    }
   }
 
   // Text bubble-related variables
-  var textWidth = 480;
-  var textHeight = 64;
+  var textBubbleTexWidth = 520;
+  var textBubbleTexHeight = 64;
   var textBubbleSize = 1/60;
-  var textBubbleVerticalDisplacement = 0.7;
+  var textBubbleGeometry = new THREE.PlaneGeometry(textBubbleTexWidth/textBubbleTexHeight, 1);
+  var textBubbleCanvas = document.createElement('canvas');
+  var textBubbleContext = textBubbleCanvas.getContext('2d');
+  textBubbleCanvas.width = textBubbleTexWidth;
+  textBubbleCanvas.height = textBubbleTexHeight;
+  textBubbleContext.font = "Bold "+(textBubbleTexHeight-10)+"px Courier New";
 
   /*
    * The TextBubble object displays a user's name on a label in 3D space.
@@ -1178,25 +1258,20 @@ define(function() {
   {
     this.node = node;
     this.visible = false;
-    this.texture = new THREE.Texture(drawingCanvas);
+    this.texture = new THREE.Texture(textBubbleCanvas);
     this.material = new THREE.MeshBasicMaterial({map: this.texture});
     this.material.transparent = false;
     this.mesh = new THREE.Mesh(
-      new THREE.PlaneGeometry(textWidth/textHeight, 1),
+      textBubbleGeometry,
       this.material
     );
   }
 
   TextBubble.prototype.redraw = function(text) {
-    if (text)
-      this.text = text;
-    drawingCanvas.width = textWidth;
-    drawingCanvas.height = textHeight;
-    drawingContext.font = "Bold "+(textHeight-8)+"px Arial";
-	  drawingContext.fillStyle = 'white';
-    drawingContext.fillRect(0, 0, textWidth, textHeight);
-    drawingContext.fillStyle = 'black';
-    drawingContext.fillText(this.text, 8, textHeight-12);
+	  textBubbleContext.fillStyle = 'white';
+    textBubbleContext.fillRect(0, 0, textBubbleTexWidth, textBubbleTexHeight);
+    textBubbleContext.fillStyle = 'black';
+    textBubbleContext.fillText(text, 8, textBubbleTexHeight-16);
     this.texture.needsUpdate = true;
   }
 
@@ -1208,11 +1283,95 @@ define(function() {
   TextBubble.prototype.scaleForDistance = function(distance) {
     var scale = distance*textBubbleSize;
     this.mesh.scale.set(scale, scale, scale);
-    this.mesh.position.set(0, 0.5*this.node.scale+scale/2, 1);
+    this.mesh.position.set(0, 0.5+this.node.scale/2+scale/2, 1);
+  }
+
+  // InfoPane-related variables
+  var infoPaneTexWidth = 480;
+  var infoPaneTexHeight = 480;
+  var infoScreenSize = 5;
+  var infoPaneGeometry = new THREE.PlaneGeometry(infoScreenSize, infoScreenSize);
+  var infoPaneCanvas = document.createElement('canvas');
+  var infoPaneContext = infoPaneCanvas.getContext('2d');
+  infoPaneCanvas.width = infoPaneTexWidth;
+  infoPaneCanvas.height = infoPaneTexHeight;
+
+  /*
+   * The InfoPane object displays a user's name on a pane in 3D space.
+   */
+  function InfoPane(node)
+  {
+    this.node = node;
+    this.visible = false;
+    this.texture = new THREE.Texture(infoPaneCanvas);
+    this.material = new THREE.MeshBasicMaterial({map: this.texture});
+    this.material.transparent = false;
+    this.mesh = new THREE.Mesh(
+      infoPaneGeometry,
+      this.material
+    );
+  }
+
+  InfoPane.prototype.redraw = function() {
+	  infoPaneContext.fillStyle = 'white';
+    infoPaneContext.fillRect(0, 0, infoPaneTexWidth, infoPaneTexHeight);
+    infoPaneContext.fillStyle = 'black';
+    infoPaneContext.font = "Bold 44px Courier New";
+    infoPaneContext.fillText('@' + this.node.profile.screen_name, 12, 50);
+    infoPaneContext.font = "Bold 30px Courier New";
+    var lines = this.node.profile.description.split('\n');
+    var words = [];
+    for (var i = 0; i < lines.length; ++i) {
+      words = words.concat(lines[i].split(' '));
+    }
+    var charactersPerLine = 24;
+    var line = '';
+    var charactersWritten = 0;
+    var linePos = 96;
+    var lineSpacing = 38;
+    for (var i = 0; i < words.length; ++i) {
+      if (words[i].length === 0) continue;
+      if (charactersWritten + words[i].length > charactersPerLine) {
+        if (charactersWritten > 0) {
+          infoPaneContext.fillText(line, 14, linePos);
+          line = words[i];
+          charactersWritten = words[i].length;
+        }
+        else {
+          infoPaneContext.fillText(words[i], 14, linePos);
+        }
+        linePos += lineSpacing;
+      }
+      else {
+        if (charactersWritten > 0)
+          line += ' ' + words[i];
+        else
+          line += words[i];
+        charactersWritten += 1 + words[i].length;
+      }
+    }
+    if (charactersWritten > 0) {
+      infoPaneContext.fillText(line, 14, linePos);
+      linePos += lineSpacing;
+    }
+
+    linePos += 12;
+    infoPaneContext.font = "Bold 36px Courier New";
+    if (this.node.profile.location.length > 0) {
+      infoPaneContext.fillText(this.node.profile.location, 14, linePos);
+      linePos += 66;
+    }
+    infoPaneContext.fillText('Following: ' + this.node.profile.friends_count, 14, linePos);
+    linePos += 44;
+    infoPaneContext.fillText('Followers: ' + this.node.profile.followers_count, 14, linePos);
+    this.texture.needsUpdate = true;
+    this.mesh.position.set(0, -0.5-this.node.scale/2-infoScreenSize/2, 1);
   }
 
   return Node;
 });
+
+
 
 
 
