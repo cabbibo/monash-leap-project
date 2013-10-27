@@ -6,7 +6,7 @@ define(function() {
    * Setting localFetch to true will result in Twitter data being loaded
    * from the working directory rather than the server.
    */
-  var localFetch = false;
+  var localFetch = true;
 
   if (localFetch) {
     var fetchByIDUrl = "";
@@ -145,7 +145,7 @@ define(function() {
   var dragConstant = 2; // Drag forces
   var pointerDragForce = 20; // Force with which nodes are dragged by the user
   var maxPointerDragForce = 8000;
-  var stabilisingDeceleration = 80; // Constant deceleration applied to all nodes to stop slow movements
+  var stabilisingDeceleration = 100; // Constant deceleration applied to all nodes to stop slow movements
   var maxForceMag = 5000; // The maximum net force that will be applied to a node in a frame
   var maxPhysicsTimeStep = 1/50; // The maxmimum about of time a single step of simulation can be
 
@@ -724,7 +724,8 @@ define(function() {
         var length = displacement.length();
         if (length > 0) {
           var stretch = length-springRestLength;
-          var force = displacement.multiplyScalar(springK*stretch/length);
+          // Super-linear scaling x*log(x)
+          var force = displacement.multiplyScalar(springK*stretch*Math.log(Math.E + (stretch >= 0 ? stretch : -stretch))/length);
           this.springForces[follower.id] = force;
           follower.springForces[this.id] = force.clone().multiplyScalar(-1);
         }
@@ -739,7 +740,8 @@ define(function() {
         var length = displacement.length();
         if (length > 0) {
           var stretch = length-springRestLength;
-          var force = displacement.multiplyScalar(springK*stretch/length);
+          // Super-linear scaling x*log(x)
+          var force = displacement.multiplyScalar(springK*stretch*Math.log(Math.E + (stretch >= 0 ? stretch : -stretch))/length);
           this.springForces[friend.id] = force;
           friend.springForces[this.id] = force.clone().multiplyScalar(-1);
         }
@@ -1336,10 +1338,6 @@ define(function() {
     var lineSpacing = 38;
     for (var i = 0; i < words.length; ++i) {
       if (words[i].length === 0) continue;
-      if (this.node.profile.screen_name === 'BarackObama') {
-        console.log('written: ' + charactersWritten);
-        console.log('length: ' + words[i].length);
-      }
       if (charactersWritten + words[i].length + 1 > charactersPerLine) { // +1 for space
         if (charactersWritten > 0) {
           infoPaneContext.fillText(line, 14, linePos);
@@ -1382,6 +1380,8 @@ define(function() {
 
   return Node;
 });
+
+
 
 
 

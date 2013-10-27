@@ -112,8 +112,6 @@ function buildGraph()
       node.requestShow(true);
       node.requestShow(true);
       select(node);
-      console.log(node.profile.followers);
-      console.log(node.profile.friends);
     }
     else console.log("Failed to load starting user!");
   });
@@ -332,12 +330,6 @@ function update(deltaTime)
                    }
       );
     }
-  }
-
-  if (Input.keyboard.keyPressed['t']) {
-    var node = Node.nodes[16825289];
-    if (node)
-      console.log(node.showCount);
   }
 
   if (Input.keyboard.keyPressed[' '])
