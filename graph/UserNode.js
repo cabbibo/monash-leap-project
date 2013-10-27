@@ -6,7 +6,7 @@ define(function() {
    * Setting localFetch to true will result in Twitter data being loaded
    * from the working directory rather than the server.
    */
-  var localFetch = true;
+  var localFetch = false;
 
   if (localFetch) {
     var fetchByIDUrl = "";
@@ -145,7 +145,7 @@ define(function() {
   var dragConstant = 2; // Drag forces
   var pointerDragForce = 20; // Force with which nodes are dragged by the user
   var maxPointerDragForce = 8000;
-  var stabilisingDeceleration = 75; // Constant deceleration applied to all nodes to stop slow movements
+  var stabilisingDeceleration = 80; // Constant deceleration applied to all nodes to stop slow movements
   var maxForceMag = 5000; // The maximum net force that will be applied to a node in a frame
   var maxPhysicsTimeStep = 1/50; // The maxmimum about of time a single step of simulation can be
 
@@ -313,15 +313,20 @@ define(function() {
     if (this.showCount === 0) return;
 
     if (--this.showCount < 2) {
-      if (hiddenArray) {
-        hiddenArray.push(this);
-        this.pinned = true;
+      if (this.willBeShown) {
+        this.willBeShown = false;
       }
       else {
-        this.hide();
+        if (hiddenArray) {
+          hiddenArray.push(this);
+          this.pinned = true;
+        }
+        else {
+          this.hide();
+        }
+        if (hideNeighbours)
+          this.requestHideNeighbours(false, hiddenArray);
       }
-      if (hideNeighbours)
-        this.requestHideNeighbours(false, hiddenArray);
     }
   }
 
@@ -484,7 +489,7 @@ define(function() {
    * of hiding nodes, cyclic show requests prevent proper behaviour.
    */
   Node.prototype.requestHideNeighbours = function(collapsing, hiddenArray) {
-    if (--this.requestNeighboursCount > 0) return;
+    if (!collapsing && --this.requestNeighboursCount > 0) return;
 
     for (var i = 0; i < this.numShownFollowerNodes; ++i)
       Node.get(this.profile.followers[i]).requestHide(collapsing, hiddenArray);
@@ -1331,7 +1336,11 @@ define(function() {
     var lineSpacing = 38;
     for (var i = 0; i < words.length; ++i) {
       if (words[i].length === 0) continue;
-      if (charactersWritten + words[i].length > charactersPerLine) {
+      if (this.node.profile.screen_name === 'BarackObama') {
+        console.log('written: ' + charactersWritten);
+        console.log('length: ' + words[i].length);
+      }
+      if (charactersWritten + words[i].length + 1 > charactersPerLine) { // +1 for space
         if (charactersWritten > 0) {
           infoPaneContext.fillText(line, 14, linePos);
           line = words[i];
@@ -1343,11 +1352,14 @@ define(function() {
         linePos += lineSpacing;
       }
       else {
-        if (charactersWritten > 0)
+        if (charactersWritten > 0) {
           line += ' ' + words[i];
-        else
+          charactersWritten += 1 + words[i].length;
+        }
+        else {
           line += words[i];
-        charactersWritten += 1 + words[i].length;
+          charactersWritten += words[i].length;
+        }
       }
     }
     if (charactersWritten > 0) {
@@ -1370,6 +1382,8 @@ define(function() {
 
   return Node;
 });
+
+
 
 
 
