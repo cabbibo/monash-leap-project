@@ -1287,10 +1287,10 @@ define(function() {
   }
 
   // InfoPane-related variables
-  var infoPaneTexWidth = 480;
+  var infoPaneTexWidth = 480 * 1.3;
   var infoPaneTexHeight = 480;
-  var infoScreenSize = 5;
-  var infoPaneGeometry = new THREE.PlaneGeometry(infoScreenSize, infoScreenSize);
+  var infoScreenHeight = 5;
+  var infoPaneGeometry = new THREE.PlaneGeometry(6.5, infoScreenHeight);
   var infoPaneCanvas = document.createElement('canvas');
   var infoPaneContext = infoPaneCanvas.getContext('2d');
   infoPaneCanvas.width = infoPaneTexWidth;
@@ -1324,7 +1324,7 @@ define(function() {
     for (var i = 0; i < lines.length; ++i) {
       words = words.concat(lines[i].split(' '));
     }
-    var charactersPerLine = 24;
+    var charactersPerLine = 33;
     var line = '';
     var charactersWritten = 0;
     var linePos = 96;
@@ -1365,7 +1365,7 @@ define(function() {
     linePos += 44;
     infoPaneContext.fillText('Followers: ' + this.node.profile.followers_count, 14, linePos);
     this.texture.needsUpdate = true;
-    this.mesh.position.set(0, -0.5-this.node.scale/2-infoScreenSize/2, 1);
+    this.mesh.position.set(0, -0.5-this.node.scale/2-infoScreenHeight/2, 1);
   }
 
   return Node;
