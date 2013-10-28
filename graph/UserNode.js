@@ -139,7 +139,7 @@ define(function() {
   }
 
   // Graph physics variables
-  var springRestLength = 14;
+  var springRestLength = 18;
   var springK = 250;
   var repulsionStrength = 20000;
   var dragConstant = 2; // Drag forces

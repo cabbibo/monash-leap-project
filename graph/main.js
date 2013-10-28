@@ -432,8 +432,8 @@ function update(deltaTime)
 
   // Set the fog distance
   var distance = zDistanceToCamera(centreOfFocus);
-  scene.fog.near = distance;
-  scene.fog.far = distance*3;
+  scene.fog.near = distance*2;
+  scene.fog.far = distance*2.5;
 
   Input.reset();
 }
@@ -661,6 +661,8 @@ function main(i, n) {
   timeOfLastFrame = new Date().getTime();
   mainLoop();
 }
+
+
 
 
 
