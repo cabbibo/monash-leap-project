@@ -438,7 +438,6 @@ define(function() {
   Node.prototype.requestShowNeighbours = function(expanding, followerCount, friendCount) {
     if (!expanding) {
       if (this.neighboursRequestMade) {
-        console.log("Error: Trying to request neighbours to be shown more than once.");
         return;
       }
       else this.neighboursRequestMade = true;
