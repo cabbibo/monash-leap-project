@@ -86,7 +86,7 @@ function initializeScene()
 
   camera = new THREE.PerspectiveCamera(45, canvasWidth / canvasHeight, nearClip, farClip);
   camera.matrixAutoUpdate = true;
-  camera.position.set(0, 0, 30);
+  camera.position.set(0, 0, 40);
   scene.add(camera);
 
   var pointLight = new THREE.PointLight(0xFFFFFF);
@@ -661,28 +661,4 @@ function main(i, n) {
   timeOfLastFrame = new Date().getTime();
   mainLoop();
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 

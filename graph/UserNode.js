@@ -6,7 +6,7 @@ define(function() {
    * Setting localFetch to true will result in Twitter data being loaded
    * from the working directory rather than the server.
    */
-  var localFetch = true;
+  var localFetch = false;
 
   if (localFetch) {
     var fetchByIDUrl = "";
@@ -203,7 +203,8 @@ define(function() {
     this.grabbed = false;
     this.visible = false;
     this.hasBeenShown = false;
-    this.requestNeighboursCount = 0;
+    this.reqNeighboursReqCount = 0;
+    this.neighboursRequestMade = false;
     this.expanded = false;
 
     // Functions to be called when this node's profile is loaded
@@ -269,14 +270,16 @@ define(function() {
    * that the profile remains shown until all the nodes that asked for it to be shown
    * ask for it to be hidden again.
    */
-  Node.prototype.requestShow = function(requestNeighbours) {
-    ++this.showCount;
-    if (this.showCount === 2) {
+  Node.prototype.requestShow = function(showNeighbours) {
+    if (showNeighbours)
+      ++this.reqNeighboursReqCount;
+
+    if (++this.showCount === 2) {
       // If we've reached the required number of requests, attempt to show the node.
       if (this.profileLoadAttempted) {
         if (this.profile) {
           this.show();
-          if (requestNeighbours)
+          if (this.reqNeighboursReqCount > 0)
             this.requestShowNeighbours(false);
         }
       }
@@ -293,7 +296,7 @@ define(function() {
             // profile to be hidden again in the meantime
             if (me.willBeShown) {
               me.show();
-              if (requestNeighbours)
+              if (me.reqNeighboursReqCount > 0)
                 me.requestShowNeighbours(false);
               me.willBeShown = false;
             }
@@ -310,7 +313,8 @@ define(function() {
    * Request that the node be hidden.
    */
   Node.prototype.requestHide = function(hideNeighbours, hiddenArray) {
-    if (this.showCount === 0) return;
+    if (hideNeighbours)
+      --this.reqNeighboursReqCount;
 
     if (--this.showCount < 2) {
       if (this.willBeShown) {
@@ -324,7 +328,7 @@ define(function() {
         else {
           this.hide();
         }
-        if (hideNeighbours)
+        if (this.reqNeighboursReqCount === 0)
           this.requestHideNeighbours(false, hiddenArray);
       }
     }
@@ -432,7 +436,13 @@ define(function() {
    * so it shouldn't be called outside of this module. Use showNeighbourProfiles for that.
    */
   Node.prototype.requestShowNeighbours = function(expanding, followerCount, friendCount) {
-    if (!expanding && ++this.requestNeighboursCount > 1) return;
+    if (!expanding) {
+      if (this.neighboursRequestMade) {
+        console.log("Error: Trying to request neighbours to be shown more than once.");
+        return;
+      }
+      else this.neighboursRequestMade = true;
+    }
 
     // Ensure the follower and friend counts are valid
     followerCount = this.checkFollowerCount(followerCount);
@@ -489,7 +499,13 @@ define(function() {
    * of hiding nodes, cyclic show requests prevent proper behaviour.
    */
   Node.prototype.requestHideNeighbours = function(collapsing, hiddenArray) {
-    if (!collapsing && --this.requestNeighboursCount > 0) return;
+    if (!collapsing) {
+      if (!this.neighboursRequestMade) {
+        console.log("Error: Trying to request neighbours to be hidden more than once.");
+        return;
+      }
+      else this.neighboursRequestMade = false;
+    }
 
     for (var i = 0; i < this.numShownFollowerNodes; ++i)
       Node.get(this.profile.followers[i]).requestHide(collapsing, hiddenArray);
@@ -1380,21 +1396,4 @@ define(function() {
 
   return Node;
 });
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
