@@ -329,7 +329,7 @@ define(function() {
           this.hide();
         }
         if (this.reqNeighboursReqCount === 0)
-          this.requestHideNeighbours(false, hiddenArray);
+          this.requestHideNeighbours(hiddenArray);
       }
     }
   }
@@ -426,7 +426,7 @@ define(function() {
 
   Node.prototype.collapse = function(hiddenArray) {
     if (!this.collapsing && this.expanded) {
-      this.requestHideNeighbours(true, hiddenArray);
+      this.requestHideNeighboursC(hiddenArray);
       this.collapsing = true;
     }
   }
@@ -437,10 +437,10 @@ define(function() {
    */
   Node.prototype.requestShowNeighbours = function(expanding, followerCount, friendCount) {
     if (!expanding) {
-      if (this.neighboursRequestMade) {
+      if (this.neighboursRequestMade)
         return;
-      }
-      else this.neighboursRequestMade = true;
+      else
+        this.neighboursRequestMade = true;
     }
 
     // Ensure the follower and friend counts are valid
@@ -489,31 +489,46 @@ define(function() {
     // Position the appearing nodes
     positionAppearingNodes(appearingNodes, this.position);
 
-    this.numShownFollowerNodes = followerCount;
-    this.numShownFriendNodes = friendCount;
+    if (expanding) {
+      this.numShownFollowerNodesE = followerCount;
+      this.numShownFriendNodesE = friendCount;
+    }
+    else {
+      this.numShownFollowerNodes = followerCount;
+      this.numShownFriendNodes = friendCount;
+    }
   }
 
   /*
    * Hide all the neighbours of this node. Note: with the current method
    * of hiding nodes, cyclic show requests prevent proper behaviour.
    */
-  Node.prototype.requestHideNeighbours = function(collapsing, hiddenArray) {
-    if (!collapsing) {
-      if (!this.neighboursRequestMade) {
-        console.log("Error: Trying to request neighbours to be hidden more than once.");
-        return;
-      }
-      else this.neighboursRequestMade = false;
-    }
+  Node.prototype.requestHideNeighbours = function(hiddenArray) {
+    if (!this.neighboursRequestMade)
+      return;
+    else
+      this.neighboursRequestMade = false;
 
     for (var i = 0; i < this.numShownFollowerNodes; ++i)
-      Node.get(this.profile.followers[i]).requestHide(collapsing, hiddenArray);
+      Node.get(this.profile.followers[i]).requestHide(false, hiddenArray);
 
     for (var i = 0; i < this.numShownFriendNodes; ++i)
-      Node.get(this.profile.friends[i]).requestHide(collapsing, hiddenArray);
+      Node.get(this.profile.friends[i]).requestHide(false, hiddenArray);
 
     this.numShownFollowerNodes = 0;
     this.numShownFriendNodes = 0;
+  }
+
+  Node.prototype.requestHideNeighboursC = function(hiddenArray) {
+
+    for (var i = 0; i < this.numShownFollowerNodesE; ++i)
+      Node.get(this.profile.followers[i]).requestHide(true, hiddenArray);
+
+    for (var i = 0; i < this.numShownFriendNodesE; ++i)
+      Node.get(this.profile.friends[i]).requestHide(true, hiddenArray);
+
+    this.numShownFollowerNodesE = 0;
+    this.numShownFriendNodesE = 0;
   }
 
 
