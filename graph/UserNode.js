@@ -1,3 +1,12 @@
+/*
+ * Author: Nicholas Smith
+ * I disclaim copyright for this work.
+ *
+ * Please note that the system for showing and hiding parts of the graph is kind of
+ * hackish (particularly hiding). If this code is to be used for a proper application
+ * then that component of the code will need to be scrapped.
+ */
+
 "use strict";
 
 define(function() {
@@ -6,7 +15,7 @@ define(function() {
    * Setting localFetch to true will result in Twitter data being loaded
    * from the working directory rather than the server.
    */
-  var localFetch = false;
+  var localFetch = true;
 
   if (localFetch) {
     var fetchByIDUrl = "";
@@ -165,17 +174,6 @@ define(function() {
 
   var defaultDisplayPicTexture = THREE.ImageUtils.loadTexture("defaultProfilePic.png");
 
-  /*
-  var sphereRadius = 0.5;
-  var sphereSegments = 16;
-  var sphereRings = 16;
-  var sphereGeometry = new THREE.SphereGeometry(sphereRadius, sphereSegments, sphereRings);
-
-  var sphereMat = new THREE.MeshLambertMaterial({color: 0x888888});
-  var highlightedSphereMat = new THREE.MeshLambertMaterial({color: 0xFF8800});
-  var selectedSphereMat = new THREE.MeshLambertMaterial({color: 0x77FF77});
-  */
-
   // Colourings for edges
   var followerColor = 0x5555FF;
   var friendColor = 0xFF2222;
@@ -203,6 +201,7 @@ define(function() {
     this.grabbed = false;
     this.visible = false;
     this.hasBeenShown = false;
+    // The number of times a node has requested this node to request its neighbours to be shown
     this.reqNeighboursReqCount = 0;
     this.neighboursRequestMade = false;
     this.expanded = false;
@@ -263,12 +262,9 @@ define(function() {
 
   /*
    * Request that the node be shown. The node will only be shown after 2 requests.
-   */
-    /*
-   * Show the profile information for this node. This can be requested multiple times.
-   * The profile information is first loaded if necessary. A count is maintained so
-   * that the profile remains shown until all the nodes that asked for it to be shown
-   * ask for it to be hidden again.
+   * A count is maintained so that the profile remains shown until all the nodes that
+   * asked for it to be shown ask for it to be hidden again. Upon showing, the profile
+   * information of the user is loaded if necessary.
    */
   Node.prototype.requestShow = function(showNeighbours) {
     if (showNeighbours)
@@ -372,7 +368,7 @@ define(function() {
 
   /*
    * This should be called when a node's profile is loaded so that it can
-   * make the necessary callbacks.
+   * make the necessary callbacks. These are currently used for activity calculations.
    */
   Node.prototype.makeLoadedCallbacks = function() {
     for (var i = 0; i < this.onLoadFuncs.length; ++i) {
@@ -417,6 +413,7 @@ define(function() {
 
   }
 
+  // Show all the nodes around this node.
   Node.prototype.expand = function() {
     if (!this.collapsing && !this.expanded) {
       this.requestShowNeighbours(true);
@@ -424,6 +421,7 @@ define(function() {
     }
   }
 
+  // Hide all the nodes around this node (provided they would not otherwise be shown).
   Node.prototype.collapse = function(hiddenArray) {
     if (!this.collapsing && this.expanded) {
       this.requestHideNeighboursC(hiddenArray);
@@ -432,8 +430,8 @@ define(function() {
   }
 
   /*
-   * Show all the neighbours of this node. This won't show the profiles of the neighbours,
-   * so it shouldn't be called outside of this module. Use showNeighbourProfiles for that.
+   * Show all the neighbours of this node. This can be called an unlimited number of times,
+   * so it is recommened to use expand() instead when calling outside this module.
    */
   Node.prototype.requestShowNeighbours = function(expanding, followerCount, friendCount) {
     if (!expanding) {
@@ -501,7 +499,8 @@ define(function() {
 
   /*
    * Hide all the neighbours of this node. Note: with the current method
-   * of hiding nodes, cyclic show requests prevent proper behaviour.
+   * of hiding nodes, cyclic show requests prevent proper hiding behaviour.
+   * This is not trivial to fix.
    */
   Node.prototype.requestHideNeighbours = function(hiddenArray) {
     if (!this.neighboursRequestMade)
@@ -519,6 +518,11 @@ define(function() {
     this.numShownFriendNodes = 0;
   }
 
+  /*
+   * Hide all the neighbours of this node. This is a different version of the above
+   * function that should be called when collapsing (we need two different counts for
+   * showing/hiding when expanding/collapsing and when doing it for other reasons).
+   */
   Node.prototype.requestHideNeighboursC = function(hiddenArray) {
 
     for (var i = 0; i < this.numShownFollowerNodesE; ++i)
@@ -533,7 +537,7 @@ define(function() {
 
 
   /*
-   * Position the provided nodes equally around the provided position.
+   * Position the given nodes equally around the given position.
    */
   function positionAppearingNodes(appearingNodes, centrePosition) {
     // Space the new nodes to be shown around this node
@@ -560,6 +564,7 @@ define(function() {
   Node.prototype.constructEdges = function(followerCount, friendCount) {
     var followers = this.profile.followers;
     var friends = this.profile.friends;
+
     // For all new shown follower nodes (where the edge isn't already constructed)
     for (var i = this.followerEdgesConstructed; i < followerCount; ++i) {
       var followerID = followers[i];
@@ -637,6 +642,11 @@ define(function() {
     this.friendEdgesConstructed = friendCount;
   }
 
+  /*
+   * Try to calculate the activity between two users. If we can't do it immediately
+   * (because one user isn't loaded), add this function and its arguments to the callback
+   * queue of the node we're waiting on to load.
+   */
   function attemptSetArrowScale(edge, tailUser, headUser) {
     if (!tailUser.profile) {
       tailUser.onLoadFuncs.push(attemptSetArrowScale);
@@ -659,21 +669,18 @@ define(function() {
    * a percentage (0% - 100%).
    */
   function calculateActivityScore(ofUser, aboutUser) {
-		var tweetMentions = 0;
-		var tweetFavorites = 0;
-		var infPercentage = 0.0;
-		var yesNotifications = false;
+		var mentions = countMentions(ofUser, aboutUser.profile.screen_name);
+		var favorites = countFavorites(ofUser, aboutUser.profile.screen_name);
 
-		var aboutUserScreenName = aboutUser.profile.screen_name;
+    var tweetPercentage = (mentions > 0) ? mentions/ofUser.profile.timeline.length : 0;
+    var favoritePercentage = (favorites > 0) ? favorites/ofUser.profile.favorites.length : 0;
+		var activityPercentage = tweetPercentage*0.75 + favoritePercentage*0.25;
 
-		tweetMentions = countMentions(ofUser, aboutUserScreenName);
-		tweetFavorites = countFavorites(ofUser, aboutUserScreenName);
-		infPercentage += calculatePercentage(tweetMentions, tweetFavorites, ofUser, yesNotifications);
     // If half a user's activity is about one person, consider it maximum
-    infPercentage *= 2;
-    if (infPercentage > 1)
-      infPercentage = 1;
-		return infPercentage;
+    activityPercentage *= 2;
+    if (activityPercentage > 1)
+     activityPercentage = 1;
+		return activityPercentage;
 	}
 
 	/*
@@ -708,27 +715,17 @@ define(function() {
 
 	/*
 	 * Counts and returns the number of tweets of the second user that the first user
-   * has favourited.
+   * has favorited.
 	 */
 	function countFavorites(ofUser, aboutUserScreenName) {
 		var tweetFavorites = 0;
-		var favourites = ofUser.profile.favorites;
+		var favorites = ofUser.profile.favorites;
 
-		for (var i = 0; i < favourites.length; ++i)
-			if (favourites[i].user && favourites[i].user.screen_name === aboutUserScreenName)
+		for (var i = 0; i < favorites.length; ++i)
+			if (favorites[i].user && favorites[i].user.screen_name === aboutUserScreenName)
 				++tweetFavorites;
 
 		return tweetFavorites;
-	}
-
-	function calculatePercentage(tweetMentions, tweetFavourites, ofUser, yesNotifications) {
-    var tweetPercentInf = (tweetMentions > 0) ? tweetMentions/ofUser.profile.timeline.length : 0;
-    var favoritePercentInf = (tweetFavourites > 0) ? tweetFavourites/ofUser.profile.favorites.length : 0;
-
-		if(yesNotifications)
-			return tweetPercentInf*0.6375+favoritePercentInf*0.2125;
-		else
-			return tweetPercentInf*0.75+favoritePercentInf*0.25;
 	}
 
   /*
@@ -791,6 +788,7 @@ define(function() {
       }
     }
 
+    /*
     // Add force from being dragged around via interaction
     if (this.grabbed) {
       // Set the pointer depth in 3D to the node depth (in NDC)
@@ -809,6 +807,7 @@ define(function() {
         force.multiplyScalar(maxPointerDragForce / mag);
       this.netForce.add(force);
     }
+    */
   }
 
   /*
@@ -863,6 +862,9 @@ define(function() {
     this.accumulatedTime = 0;
   }
 
+  /*
+   * Update the node's components as required.
+   */
   Node.prototype.updateComponents = function(deltaTime, camera, projector) {
     // Set the materials of the node's meshes to reflect its current state
     if (this.visible) {
@@ -972,7 +974,7 @@ define(function() {
   var maxArrowScale = Math.log(activityCalcLogTranslation + arrowScalingFromActivity);
 
   /*
-   * The Edge object visually depicts a relationship between two nodes.
+   * The Edge object holds the mesh information for edges between nodes.
    */
   function Edge(node1, node2)
   {
@@ -1008,6 +1010,7 @@ define(function() {
     this.setArrowScale(node1, minArrowScale);
     this.setArrowScale(node2, minArrowScale);
 
+    // Create the geometry for an arrow head.
     function createArrowHead(dir) {
       var geo = new THREE.Geometry();
       geo.vertices.push(new THREE.Vector3(0, 0, 0));
@@ -1022,6 +1025,9 @@ define(function() {
   // An array of all edges constructed. This exists so that the main loop can update the edges.
   Node.edges = [];
 
+  /*
+   * Change the end of the edge where the given node is located to an arrow.
+   */
   Edge.prototype.setArrow = function(node) {
     if (node === this.node1) {
       var geo = this.leftArrowHeadGeo;
@@ -1042,6 +1048,10 @@ define(function() {
     else console.log("Error: node with ID " + node.id + " passed to setArrow() for edge between node " + this.node1.id + " and node " + this.node2.id + ".");
   }
 
+  /*
+   * Set the scale of the arrow at the end of the edge where the given node is
+   * located (and consequently change its colour).
+   */
   Edge.prototype.setArrowScale = function(node, scale) {
     if (node === this.node1) {
       // Update scale
@@ -1062,6 +1072,9 @@ define(function() {
     else console.log("Error: node with ID " + node.id + " passed to setArrowScale() for edge between node " + this.node1.id + " and node " + this.node2.id + ".");
   }
 
+  /*
+   * Update the colours for the 'left' end of the edge.
+   */
   Edge.prototype.updateLeftColors = function()
   {
     if (this.leftArrowHeadMesh.isArrow) {
@@ -1101,6 +1114,9 @@ define(function() {
     }
   }
 
+  /*
+   * Update the colours for the 'right' end of the edge.
+   */
   Edge.prototype.updateRightColors = function()
   {
     if (this.rightArrowHeadMesh.isArrow) {
@@ -1139,8 +1155,6 @@ define(function() {
       this.middleGeo.colorsNeedUpdate = true;
     }
   }
-
-  var oneOverSqrtTwo = 1 / Math.sqrt(2);
 
   /*
    * Determine whether the edge should currently be visible and
@@ -1410,4 +1424,6 @@ define(function() {
 
   return Node;
 });
+
+
 

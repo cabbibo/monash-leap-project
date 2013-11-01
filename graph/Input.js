@@ -1,7 +1,10 @@
 /*
-This module defines all objects and functions needed to handle input from
-the mouse, keyboard, and Leap Motion.
-*/
+ * Author: Nicholas Smith
+ * I disclaim copyright for this work.
+ *
+ * This module defines all objects and functions needed to handle input from
+ * the mouse, keyboard, and Leap Motion.
+ */
 
 "use strict";
 
@@ -95,7 +98,7 @@ define(function() {
   }
 
   document.addEventListener('keydown',function(evt) {
-    //evt.preventDefault(); // don't do browser built-in search with key press
+    //evt.preventDefault(); // Don't do browser built-in search with key press
     var t = translateKeycode(evt.keyCode);
 
     if (!Input.keyboard.key[t]) { // key wasn't pressed
@@ -140,3 +143,4 @@ define(function() {
 
 
 
+

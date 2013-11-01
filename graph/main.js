@@ -1,8 +1,12 @@
-"use strict";
+/*
+ * Author: Nicholas Smith
+ * I disclaim copyright for this work.
+ *
+ * The code in this module will need refactoring if it is to be extended to
+ * add further functionality to the simulation.
+ */
 
-// FEATURE FLAGS
-var grabbingEnabled = false;
-var usingRift = false;
+"use strict";
 
 // Graphics variables
 var scene;
@@ -16,7 +20,8 @@ var nodeSimCreditPerFrame = 125;
 var nextNodeIndexToSimulate = -1;
 var simulationFrozen = false;
 
-// Oculus Rift variables
+// Oculus Rift variables. Note, Oculus Rift support is not complete/functional.
+var usingRift = false;
 if (usingRift) {
   var riftRenderer;
   var vrState = new vr.State();
@@ -45,13 +50,10 @@ var leapMetresPerMM = 0.5;
 var leapRadiansPerMM = 0.02;
 var screenAspectRatio = 16/9;
 var screenSize = 15.6 * 25.4; // in mm
-//var screenSize = 24 * 25.4;
 var screenHeight = Math.sqrt(screenSize*screenSize/(screenAspectRatio*screenAspectRatio + 1));
 var screenWidth = Math.sqrt(screenSize*screenSize - screenHeight*screenHeight);
 var leapDistance = 250; // in mm
-//var leapDistance = 600;
 var leapHeight = 0; //relative to the bottom of the display
-//var leapHeight = -250;
 
 window.addEventListener('resize',
                           function(event) {
@@ -131,6 +133,9 @@ var grabbingHandGrace = 0;
 var maxGrabWarmup = 0.2;
 var grabWarmup = -2; // -1 is 'ready' value, -2 is 'finished' value
 
+/* Functions can be pushed to the coroutines array to be executed as if they are
+ * occuring in parallel with the program execution.
+ */
 var coroutines = new Array();
 
 function setCoroutine(data, func)
@@ -159,7 +164,7 @@ function update(deltaTime)
       else
         vr.exitFullScreen();
     }
-    if (Input.keyboard.keyPressed[' '])
+    if (Input.keyboard.keyPressed['r'])
       vr.resetHmdOrientation();
     if (Input.keyboard.keyPressed['o'])
       riftRenderer.setInterpupillaryDistance(
@@ -279,6 +284,7 @@ function update(deltaTime)
     }
   }
 
+  // Calculate how far apart the user's hands were moved in the last 8 Leap frames.
   var scaleOut = 0;
   if (hands.length === 2) {
     var oldHands = Input.leap.frame(8).hands;
@@ -294,6 +300,7 @@ function update(deltaTime)
   }
 
   // Check key pressees
+
   if (Input.keyboard.keyPressed['1'] || scaleOut > 100) {
     simulationFrozen = false;
     selectedNode.expand();
@@ -334,7 +341,6 @@ function update(deltaTime)
 
   if (Input.keyboard.keyPressed[' '])
     simulationFrozen = !simulationFrozen;
-
 
   // Now that we've checked for finger pointers, we can know whether
   // to interpet mouse input or not
@@ -444,7 +450,7 @@ for (var i = 0; i < fingerSmoothingLevel; ++i)
   fingerPositions[i] = [1, 1, 1];
 var fpi = 0;
 
-// Gets the position of the finger on the screen in Normalized Device Coordinates
+// Gets the position of the finger on the screen in Normalized Device Coordinates.
 function getFingerOnScreenNDC(finger)
 {
   var pos = finger.tipPosition.slice(0);
@@ -482,6 +488,9 @@ function averageOfVectors(vectors, numVectors)
   return result;
 }
 
+/*
+ * Convert a vector in Normalized Device Coordinates to screen coordinates.
+ */
 function NDCToPixelCoordinates(NDC)
 {
   var pixelCoords = new THREE.Vector2();
@@ -518,6 +527,9 @@ function draw()
   else renderer.render(scene, camera);
 }
 
+/*
+ * Select the node currently under the current pointer.
+ */
 function selectWithCurrentPointer()
 {
   // Safeguard in case we still have somebody grabbed
@@ -529,9 +541,7 @@ function selectWithCurrentPointer()
     }
     else {
       select(newSelectedNode);
-      if (grabbingEnabled) grab(selectedNode);
     }
-
   }
 }
 
@@ -549,6 +559,7 @@ function unhighlight()
   }
 }
 
+// The position of the centre of focus for the camera.
 var centreOfFocus = new THREE.Vector3();
 
 // Select the given node. We allow no deselection
@@ -642,7 +653,7 @@ function nextUpdate()
   var deltaTime = (currentTime - timeOfLastFrame)/1000;
   timeOfLastFrame = currentTime;
 
-  // Limit the maximum time step to avoid unexpected results
+  // Limit the maximum time step
   if (deltaTime > frameTimeLimit)
     update(frameTimeLimit);
   else
@@ -661,4 +672,6 @@ function main(i, n) {
   timeOfLastFrame = new Date().getTime();
   mainLoop();
 }
+
+
 
