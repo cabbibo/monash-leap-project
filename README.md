@@ -5,10 +5,10 @@ A student project involving the use of the Leap Motion to explore Twitter conten
 
 This project was developed as part of the Monash University, Faculty of Information Technology Unit: FIT2044 - Advanced Project.
 
-The project team consisted of:
-Nicholas Smith
-Tyson Jones
-Keren Burshtein
+The project team consisted of:  
+Nicholas Smith  
+Tyson Jones  
+Keren Burshtein  
 Jon McCormack (supervisor)
 
 You can run a functional version of the application here, provided the server is active:
