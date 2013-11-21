@@ -36,7 +36,7 @@ Because of Twitter's API restrictions, we are unable to collect data in real tim
 
 The application runs best in Google Chrome, and may not work in some browsers. If you're trying to run the code locally using Chrome, you will need to enable cross-origin file access. Launching Chrome with the following command will do the trick:
 
-<google_chrome_path> --allow-file-access-from-files <file_path>\graph.html
+(google_chrome_path) --allow-file-access-from-files (file_path)\graph.html
 
 Also worth noting is that due to the short development time of the project, parts of the code may be poorly structured and there may be bugs. In particular, the graph expanding and collapsing code does not work to specification. You may be unable to collapse portions of the graph due to cyclic dependencies in node-showing. The code for this functionality will need rewriting if it is to produce the intended behaviour.
 
