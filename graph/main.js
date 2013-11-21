@@ -14,6 +14,8 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
 */
 
 /*
+ * Author: Nicholas Smith
+ *
  * The code in this module will need refactoring if it is to be extended to
  * add further functionality to the simulation.
  */

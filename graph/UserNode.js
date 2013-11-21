@@ -14,6 +14,9 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
 */
 
 /*
+ * Author: Nicholas Smith
+ * Contributors: Tyson Jones, Keren Burshtein
+ *
  * Please note that the system for showing and hiding parts of the graph is kind of
  * hackish (particularly hiding). If this code is to be used for a proper application
  * then that component of the code will need to be scrapped.
@@ -1188,6 +1191,8 @@ define(function() {
 
     if (!this.visible) return;
 
+	// Below is all the vector mathematics to position the ends of edges correctly.
+	
     var fullDirVector = this.node2.position.clone().sub(this.node1.position).normalize();
 
     // The z-distance of the two nodes from the camera

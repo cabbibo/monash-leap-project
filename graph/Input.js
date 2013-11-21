@@ -14,6 +14,8 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
 */
 
 /*
+ * Author: Nicholas Smith
+ *
  * This module defines all objects and functions needed to handle input from
  * the mouse, keyboard, and Leap Motion.
  */
